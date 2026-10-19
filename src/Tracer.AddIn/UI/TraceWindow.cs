@@ -43,7 +43,8 @@ internal sealed class TraceWindow : Form
     public TraceWindow(TraceController controller)
     {
         _controller = controller;
-        Text = "Formula Tracer";
+        // The version in the title tells at a glance which build Excel actually loaded.
+        Text = "Formula Tracer " + typeof(TraceWindow).Assembly.GetName().Version.ToString(3);
         Font = new Font("Segoe UI", 9f);
         AutoScaleMode = AutoScaleMode.Dpi;
         FormBorderStyle = FormBorderStyle.SizableToolWindow;
@@ -55,7 +56,7 @@ internal sealed class TraceWindow : Form
         Size = new Size(820, 420);
         _rootFont = new Font(Font, FontStyle.Bold);
 
-        _list = new ListView
+        _list = new SafeListView(ReportInternalError)
         {
             Dock = DockStyle.Fill,
             View = View.Details,
@@ -439,6 +440,53 @@ internal sealed class TraceWindow : Form
         }
         catch (COMException)
         {
+        }
+    }
+
+    /// <summary>
+    /// Last-resort net: WinForms can throw inside its own message handling (e.g. a stale native item index in
+    /// <c>WmReflectNotify</c>) before any of our handlers run. Uncaught, that shows its crash dialog inside Excel.
+    /// </summary>
+    protected override void WndProc(ref Message m)
+    {
+        try
+        {
+            base.WndProc(ref m);
+        }
+        catch (Exception ex)
+        {
+            ReportInternalError(ex);
+        }
+    }
+
+    private void ReportInternalError(Exception ex)
+    {
+        try
+        {
+            _status.Text = "Ignored an internal error: " + ex.Message;
+        }
+        catch (Exception)
+        {
+        }
+    }
+
+    /// <summary>A ListView whose window procedure never lets an exception escape (see <see cref="WndProc"/>).</summary>
+    private sealed class SafeListView : ListView
+    {
+        private readonly Action<Exception> _report;
+
+        public SafeListView(Action<Exception> report) => _report = report;
+
+        protected override void WndProc(ref Message m)
+        {
+            try
+            {
+                base.WndProc(ref m);
+            }
+            catch (Exception ex)
+            {
+                _report(ex);
+            }
         }
     }
 

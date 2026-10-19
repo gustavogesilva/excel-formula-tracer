@@ -134,9 +134,18 @@ dotnet build src/Tracer.Setup -c Release      # also builds and packs the add-in
 ```
 
 To release a new version:
-1. Bump `<Version>` in `Directory.Build.props`.
-2. Push a tag such as `v0.2.0`.
-3. CI publishes a GitHub Release with the installer and both `.xll` files.
+1. Bump `<Version>` in `Directory.Build.props` and merge to `main`.
+2. Tag what is on GitHub, not your local checkout:
+   ```
+   git fetch origin
+   git tag v0.2.0 origin/main
+   git push origin v0.2.0
+   ```
+3. CI publishes a GitHub Release with the installer and both `.xll` files. It refuses to publish when:
+   - the tag doesn't equal `v` + `<Version>`; or
+   - the tagged commit isn't on `main`.
+
+The running build's version is shown in the trace window's title bar.
 
 ## Known limitations
 
