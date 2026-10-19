@@ -36,10 +36,26 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
 
 ## Keyboard and window (assumption: Excel's message loop delivers these keys to a modeless WinForms window)
 
-- [ ] Ctrl+Q on a formula cell opens the window, with the first precedent selected and the formula's references colour-coded.
+- [ ] Ctrl+Q on a formula cell opens the window. Expect:
+  - the bold top row is the traced cell and is selected;
+  - the arguments are listed under it;
+  - the formula's references are colour-coded.
+- [ ] One-argument formula (`=Sheet2!B5`): ↓ **or** → from the top row moves Excel to Sheet2!B5, switching the
+      tab, without Enter.
 - [ ] ↑/↓ move the list, and Excel's selection follows, including onto other sheets and other open workbooks.
 - [ ] After each move, keyboard focus stays in the trace window.
-- [ ] → drills into the selected row; ← goes back; Tab toggles precedents/dependents.
+- [ ] → on an argument drills into it, and its own top row is selected.
+- [ ] ← on an argument returns to the top row (Excel follows); ← on the top row goes back one level.
+- [ ] Tab toggles precedents/dependents.
+- [ ] **Traces that lead nowhere show a message on the status line and no error dialog:**
+  - [ ] → into a constant cell, then →, ←, Tab, E;
+  - [ ] → on an empty range;
+  - [ ] a cell with `=1+2` (no references);
+  - [ ] dependents of a cell nothing refers to;
+  - [ ] → on `#REF!`, a closed-workbook row, or an unknown name;
+  - [ ] → on OFFSET pointing off the sheet;
+  - [ ] keys pressed while editing a cell in Excel;
+  - [ ] closing a workbook while the window shows its cells, then pressing ↑/↓.
 - [ ] Enter jumps and closes; Esc restores the original sheet, selection and scroll position.
 - [ ] Ctrl+C copies the address. Confirm that Excel does not intercept it.
 - [ ] Ctrl+Backspace (in Excel, after an Enter-jump) returns to the previous position.

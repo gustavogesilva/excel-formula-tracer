@@ -40,14 +40,19 @@ installer avoids this because it writes the file itself.
 | Excel | Ctrl+Shift+Q | Trace dependents of the selection |
 | Excel | Ctrl+Backspace | Jump back to where you jumped from (100 steps) |
 | Window | ↑ ↓ PgUp PgDn | Move through the list; Excel follows |
-| Window | → / double-click | Drill in: precedents of that cell, cells of a range, parts of a name, evaluate OFFSET/INDIRECT |
-| Window | ← / Backspace | Back one level |
+| Window | → / double-click | On the top (traced-cell) row: step down to the first argument. On an argument: drill in (its precedents, the cells of a range, the parts of a name, or evaluate OFFSET/INDIRECT) |
+| Window | ← | From an argument, back up to the top row; from the top row, back one level |
+| Window | Backspace | Back one level |
 | Window | Tab | Switch between precedents and dependents of the same cell |
 | Window | Ctrl+Q / Ctrl+Shift+Q | Precedents / dependents of the selected row |
 | Window | E | Trace the error (`#REF!`, `#N/A`, …) in the selected row, or in the traced cell, back to its root cell(s) |
 | Window | Enter | Jump to the selected row and close |
 | Window | Esc | Return to where you started and close |
 | Window | Ctrl+C | Copy the selected address |
+
+The list is a small tree. Its top row (bold) is the cell being traced, and its arguments sit underneath. The window
+opens on the top row, where Excel already is, so **↓ or → takes you straight to the first argument**, even when the
+formula has only one. Excel's selection, including the sheet tab, follows every move.
 
 The Tracer ribbon tab has a **Trace error** button for the active cell. It also switches the shortcuts to Ctrl+[ / Ctrl+], which replaces Excel's built-in Go To Precedents/Dependents, turns index-at-idle on or off, and rebuilds the index.
 

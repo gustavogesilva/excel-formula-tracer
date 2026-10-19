@@ -23,10 +23,23 @@ public sealed class AddIn : IExcelAddIn
 
         ExcelAsyncUtil.QueueAsMacro(() =>
         {
-            Hotkeys.Apply(Settings.Current.Keys);
-            EventSync.Attach();
-            TraceController.Instance.Prewarm();
-            EventSync.SchedulePrebuild();
+            try
+            {
+                Hotkeys.Apply(Settings.Current.Keys);
+                EventSync.Attach();
+                TraceController.Instance.Prewarm();
+                EventSync.SchedulePrebuild();
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    ExcelHost.App.StatusBar = "Formula Tracer could not start: " + ex.Message;
+                }
+                catch (Exception)
+                {
+                }
+            }
         });
     }
 

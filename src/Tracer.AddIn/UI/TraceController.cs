@@ -34,6 +34,24 @@ internal sealed class Level
     public double Millis;
     /// <summary>Display values already read in bulk (range listings), keyed by item.</summary>
     public Dictionary<TraceItem, string>? Values;
+
+    private TraceItem? _root;
+
+    /// <summary>Row 0 of the list: the traced cell or range itself (or the name being listed).</summary>
+    public TraceItem Root
+    {
+        get => _root ??= new TraceItem
+        {
+            Kind = Focus.IsSingleCell ? TraceItemKind.Cell : TraceItemKind.Range,
+            Book = Book,
+            Sheet = Sheet,
+            Rect = Focus,
+            HasTarget = Book.Length > 0 && Sheet.Length > 0,
+            Label = A1.Qualified(Book, Sheet, Focus, Book, null),
+            Expression = Formula,
+        };
+        set => _root = value;
+    }
 }
 
 /// <summary>Builds levels from the engine and Excel; owns the window and the jump history.</summary>
@@ -153,6 +171,7 @@ internal sealed class TraceController
         level.Formula = result.Formula.Text;
         level.Items = result.Items;
         var notes = new List<string>();
+        if (result.Items.Count == 0) notes.Add("the formula refers to no cells");
         if (IsErrorText(value)) notes.Add("E traces this error to its root");
         if (result.Items.Exists(i => i.Kind == TraceItemKind.Dynamic)) notes.Add("→ on an OFFSET/INDIRECT row evaluates it");
         level.Note = string.Join(" · ", notes);
@@ -211,6 +230,7 @@ internal sealed class TraceController
             Title = "Dependents of " + Address(book, sheet, rect),
         };
         var notes = new List<string>();
+        if (result.Items.Count == 0) notes.Add("no formula in the open workbooks refers to this");
         if (indexed > 0) notes.Add($"indexed {indexed} sheet(s)");
         if (result.DynamicFormulaCells > 0) notes.Add($"{result.DynamicFormulaCells:N0} formula cells use OFFSET/INDIRECT and may depend on this without being listed");
         level.Note = string.Join(" · ", notes);
@@ -235,7 +255,7 @@ internal sealed class TraceController
         switch (item.Kind)
         {
             case TraceItemKind.Name when item.Children != null && item.Children.Count != 1:
-                return Listing(current, item.Label, item.Children);
+                return Listing(current, item, item.Children);
             case TraceItemKind.External:
                 reason = "Workbook is not open: " + item.Label;
                 return null;
@@ -281,16 +301,18 @@ internal sealed class TraceController
         return true;
     }
 
-    private Level Listing(Level current, string label, List<TraceItem> items) => new()
+    /// <summary>The parts of a name that refers to several ranges (or a LAMBDA); the name itself is the root row.</summary>
+    private static Level Listing(Level current, TraceItem name, List<TraceItem> items) => new()
     {
         Mode = current.Mode,
         Book = current.Book,
         Sheet = current.Sheet,
         Focus = current.Focus,
-        FocusValue = current.FocusValue,
-        Formula = current.Formula,
-        Title = label,
+        Formula = name.Expression,
+        Title = name.Label + (name.Expression != null ? "  " + name.Expression : ""),
         Items = items,
+        Note = items.Count == 0 ? "the name refers to no cells" : string.Empty,
+        Root = name,
     };
 
     /// <summary>Non-empty cells of a range (or of a dependents block), with values from one bulk read.</summary>
@@ -321,9 +343,14 @@ internal sealed class TraceController
             level.Items.Add(ti);
             level.Values[ti] = value;
         }
-        level.Note = truncated ? $"showing the first {MaxListedCells:N0} non-empty cells" : $"{cells.Count:N0} non-empty cells";
+        level.Note = truncated ? $"showing the first {MaxListedCells:N0} non-empty cells"
+            : cells.Count == 0 ? "the range is empty" : $"{cells.Count:N0} non-empty cells";
         return level;
     }
+
+    /// <summary>Value and formula for the root row: what the level already read, else read like any row.</summary>
+    public (string Value, string Formula) DisplayRoot(Level level) =>
+        level.FocusValue != null ? (level.FocusValue, level.Formula ?? "") : Display(level, level.Root);
 
     /// <summary>Value and formula for a list row (read on demand while the list paints).</summary>
     public (string Value, string Formula) Display(Level level, TraceItem item)

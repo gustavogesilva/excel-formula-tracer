@@ -58,8 +58,9 @@ internal static class EventSync
                 engine.MarkSheetDirty(book, ws.Name);
             }
         }
-        catch (COMException)
+        catch (Exception)
         {
+            // Never let an exception escape into Excel's event dispatch; worst case the index is re-read later.
         }
     }
 
@@ -73,7 +74,7 @@ internal static class EventSync
         {
             ExcelHost.Instance.InvalidateStructure(wb.Name);
         }
-        catch (COMException)
+        catch (Exception)
         {
         }
     }
@@ -85,6 +86,18 @@ internal static class EventSync
     {
         if (_prebuildQueued || !Settings.Current.Prebuild) return;
         _prebuildQueued = true;
+        try
+        {
+            QueuePrebuildStep();
+        }
+        catch (Exception)
+        {
+            _prebuildQueued = false;
+        }
+    }
+
+    private static void QueuePrebuildStep()
+    {
         ExcelAsyncUtil.QueueAsMacro(() =>
         {
             _prebuildQueued = false;

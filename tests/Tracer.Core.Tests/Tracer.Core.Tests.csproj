@@ -15,5 +15,7 @@
     <!-- Pure installer logic from the (net48, Windows-only) setup project, tested here. -->
     <Compile Include="..\..\src\Tracer.Setup\OpenValues.cs" Link="Setup\OpenValues.cs" />
     <Compile Include="..\..\src\Tracer.Setup\PeFile.cs" Link="Setup\PeFile.cs" />
+    <!-- Keyboard rules of the trace window (pure, from the add-in). -->
+    <Compile Include="..\..\src\Tracer.AddIn\UI\ListNavigation.cs" Link="AddIn\ListNavigation.cs" />
   </ItemGroup>
 </Project>
