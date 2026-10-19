@@ -58,10 +58,15 @@ jobs:
           name: FormulaTracer
           path: dist
       - name: Create release
+        # A release made by hand for the tag (e.g. on GitHub's "Draft a new release" page) gets the files attached
+        # instead of failing the job.
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release create "$GITHUB_REF_NAME" dist/*
-          --repo "$GITHUB_REPOSITORY"
-          --title "Formula Tracer $GITHUB_REF_NAME"
-          --generate-notes
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "Formula Tracer $GITHUB_REF_NAME"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" \
+              --title "Formula Tracer $GITHUB_REF_NAME" --generate-notes
+          fi

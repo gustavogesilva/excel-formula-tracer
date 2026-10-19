@@ -183,7 +183,8 @@ To release a new version:
    git tag v0.2.0 origin/main
    git push origin v0.2.0
    ```
-3. CI publishes a GitHub Release with the installer and both `.xll` files. It refuses to publish when:
+3. CI publishes a GitHub Release with the installer and both `.xll` files; there's no need to create the release on
+   GitHub (if one already exists for the tag, CI attaches the files to it). It refuses to publish when:
    - the tag doesn't equal `v` + `<Version>`; or
    - the tagged commit isn't on `main`.
 
