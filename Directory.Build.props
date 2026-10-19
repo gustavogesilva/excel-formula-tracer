@@ -4,9 +4,10 @@
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <Deterministic>true</Deterministic>
-    <Authors>gustavogesilva</Authors>
+    <Authors>Gustavo Silva</Authors>
+    <Company>Gustavo Silva</Company>
     <Product>Excel Formula Tracer</Product>
-    <Copyright>Copyright (c) 2026 gustavogesilva</Copyright>
-    <Version>0.1.2</Version>
+    <Copyright>Copyright (c) 2026 Gustavo Silva</Copyright>
+    <Version>0.1.3</Version>
   </PropertyGroup>
 </Project>

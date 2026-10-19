@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using ExcelDna.Integration;
@@ -25,7 +26,7 @@ public sealed class AddIn : IExcelAddIn
         {
             try
             {
-                Hotkeys.Apply(Settings.Current.Keys);
+                Hotkeys.Apply(Settings.Current.Shortcuts);
                 EventSync.Attach();
                 TraceController.Instance.Prewarm();
                 EventSync.SchedulePrebuild();
@@ -87,41 +88,33 @@ public static class Commands
     }
 }
 
-/// <summary>Binds shortcut keys with <c>Application.OnKey</c> so they can be changed at runtime.</summary>
+/// <summary>Binds the configured shortcuts with <c>Application.OnKey</c>, so they can be changed at runtime.</summary>
 internal static class Hotkeys
 {
     private static string[] _bound = Array.Empty<string>();
 
-    public static void Apply(KeyPreset preset)
+    /// <summary>Rebinds every shortcut in <paramref name="map"/>. Returns the ones Excel refused (e.g. "Ctrl+; (Trace error)").</summary>
+    public static List<string> Apply(ShortcutMap map)
     {
         Clear();
         var app = ExcelHost.App;
-        var keys = new System.Collections.Generic.List<string>();
-        void Bind(string key, string macro)
+        var bound = new List<string>();
+        var refused = new List<string>();
+        foreach (var (action, key) in map.All())
         {
+            string onKey = key.ToOnKey();
             try
             {
-                app.OnKey(key, macro);
-                keys.Add(key);
+                app.OnKey(onKey, ShortcutMap.Macro(action));
+                bound.Add(onKey);
             }
             catch (COMException)
             {
+                refused.Add($"{key} ({ShortcutMap.Label(action)})");
             }
         }
-
-        if (preset != KeyPreset.Brackets)
-        {
-            Bind("^q", "FT_TracePrecedents");
-            Bind("^+q", "FT_TraceDependents");
-        }
-        if (preset != KeyPreset.Arixcel)
-        {
-            // Brackets must be escaped in OnKey strings.
-            Bind("^{[}", "FT_TracePrecedents");
-            Bind("^{]}", "FT_TraceDependents");
-        }
-        Bind("^{BACKSPACE}", "FT_JumpBack");
-        _bound = keys.ToArray();
+        _bound = bound.ToArray();
+        return refused;
     }
 
     public static void Clear()

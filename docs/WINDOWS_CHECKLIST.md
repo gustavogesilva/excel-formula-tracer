@@ -26,6 +26,9 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
   - [ ] Excel starts without the add-in;
   - [ ] the `OPEN` values are renumbered without gaps.
 - [ ] `FormulaTracerSetup.exe /install /quiet` and `/uninstall /quiet` work silently. Exit code 2 means Excel was running.
+- [ ] **Close** and **Esc** close the installer dialog.
+- [ ] Properties › Details of `FormulaTracerSetup.exe` show company "Gustavo Silva" and version 0.1.3. Settings › Apps
+      shows publisher "Gustavo Silva".
 
 ## Setup
 
@@ -59,8 +62,17 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
 - [ ] Enter jumps and closes; Esc restores the original sheet, selection and scroll position.
 - [ ] Ctrl+C copies the address. Confirm that Excel does not intercept it.
 - [ ] Ctrl+Backspace (in Excel, after an Enter-jump) returns to the previous position.
-- [ ] The ribbon's Shortcuts option set to `Ctrl+[ / Ctrl+]` binds those keys **(assumption: OnKey accepts `^{[}`)**.
-      If it doesn't, try `^[` in `Hotkeys.Apply`.
+- [ ] **Tracer › Shortcuts…:**
+  - [ ] set Trace precedents to Ctrl+Alt+P: it works at once in Excel and inside the trace window, and Ctrl+Q no
+        longer traces;
+  - [ ] set Trace error to Ctrl+Shift+E: it traces the active cell's error;
+  - [ ] assigning the same key twice is refused;
+  - [ ] Ctrl+C asks for confirmation;
+  - [ ] a letter without Ctrl/Alt is refused with a beep;
+  - [ ] the ribbon tooltips show the new keys;
+  - [ ] the keys survive an Excel restart.
+- [ ] **Excel brackets** preset binds Ctrl+[ / Ctrl+] **(assumption: OnKey accepts `^{[}`)**. If Excel refuses
+      them, the dialog says so after OK.
 - [ ] Moving to a far-away cell scrolls it into view **(assumption: `Application.Goto(range, false)` scrolls when
       the target is off-screen)**.
 - [ ] The window stays above Excel when navigating into another workbook window (SDI).

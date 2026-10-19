@@ -52,7 +52,7 @@ internal static class Installer
         using var k = Registry.CurrentUser.CreateSubKey(UninstallKey)!;
         k.SetValue("DisplayName", DisplayName);
         k.SetValue("DisplayVersion", Version);
-        k.SetValue("Publisher", "gustavogesilva");
+        k.SetValue("Publisher", "Gustavo Silva");
         k.SetValue("URLInfoAbout", "https://github.com/gustavogesilva/excel-formula-tracer");
         k.SetValue("InstallLocation", InstallDir);
         k.SetValue("DisplayIcon", UninstallerPath);

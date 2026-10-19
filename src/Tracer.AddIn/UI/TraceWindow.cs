@@ -303,27 +303,32 @@ internal sealed class TraceWindow : Form
 
     private bool HandleKey(Keys key)
     {
-        Action? action = key switch
+        // The user's tracing shortcuts (Tracer › Shortcuts…) work inside the window too and take priority.
+        Action? action = Settings.Current.Shortcuts.Find((int)key) switch
         {
-            Keys.Escape => () => CloseWindow(restore: true),
-            Keys.Enter => JumpAndClose,
-            Keys.Right => () => StepInto(_level.Mode),
-            Keys.Left => StepOut,
-            Keys.Back => GoBack,
-            Keys.Tab or (Keys.Shift | Keys.Tab) => () => Navigate(() => _controller.Toggle(_level), null),
-            (Keys.Control | Keys.Q) or (Keys.Control | Keys.OemOpenBrackets) => () => StepInto(TraceMode.Precedents),
-            (Keys.Control | Keys.Shift | Keys.Q) or (Keys.Control | Keys.OemCloseBrackets) => () => StepInto(TraceMode.Dependents),
-            Keys.E => TraceError,
-            Keys.Control | Keys.C => () =>
-            {
-                if (Selected is { } s) Clipboard.SetText(s.Label);
-            },
-            Keys.Control | Keys.Back => () =>
+            TraceAction.TracePrecedents => () => StepInto(TraceMode.Precedents),
+            TraceAction.TraceDependents => () => StepInto(TraceMode.Dependents),
+            TraceAction.TraceError => TraceError,
+            TraceAction.JumpBack => () =>
             {
                 CloseWindow(restore: false);
                 _controller.JumpBack();
             },
-            _ => null,
+            _ => key switch
+            {
+                Keys.Escape => () => CloseWindow(restore: true),
+                Keys.Enter => JumpAndClose,
+                Keys.Right => () => StepInto(_level.Mode),
+                Keys.Left => StepOut,
+                Keys.Back => GoBack,
+                Keys.Tab or (Keys.Shift | Keys.Tab) => () => Navigate(() => _controller.Toggle(_level), null),
+                Keys.E => TraceError,
+                Keys.Control | Keys.C => () =>
+                {
+                    if (Selected is { } s) Clipboard.SetText(s.Label);
+                },
+                _ => null,
+            },
         };
         if (action == null) return false;
         Guard(action);

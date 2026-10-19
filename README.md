@@ -9,8 +9,9 @@ Excel's selection follows as you arrow through the list.
 1. Download `FormulaTracerSetup.exe` from the
    [latest release](https://github.com/gustavogesilva/excel-formula-tracer/releases/latest).
 2. Close Excel, then run the installer and click **Install**.
-   - The installer isn't code-signed, so Windows SmartScreen may show "Windows protected your PC". Click
-     **More info › Run anyway**.
+   - The installer isn't code-signed, so Windows SmartScreen shows "Windows protected your PC" with publisher
+     "Unknown". Click **More info › Run anyway**, or right-click the file › Properties › tick **Unblock** first.
+     See [Why Windows warns](#why-windows-warns).
 3. Start Excel. The **Tracer** tab appears on the ribbon, and *Formula Tracer* is ticked under File › Options ›
    Add-ins.
 
@@ -36,9 +37,10 @@ installer avoids this because it writes the file itself.
 
 | Where | Key | Action |
 |---|---|---|
-| Excel | Ctrl+Q | Trace precedents of the active cell |
-| Excel | Ctrl+Shift+Q | Trace dependents of the selection |
-| Excel | Ctrl+Backspace | Jump back to where you jumped from (100 steps) |
+| Excel | Ctrl+Q * | Trace precedents of the active cell |
+| Excel | Ctrl+Shift+Q * | Trace dependents of the selection |
+| Excel | (none) * | Trace the error in the active cell back to its root |
+| Excel | Ctrl+Backspace * | Jump back to where you jumped from (100 steps) |
 | Window | ↑ ↓ PgUp PgDn | Move through the list; Excel follows |
 | Window | → / double-click | On the top (traced-cell) row: step down to the first argument. On an argument: drill in (its precedents, the cells of a range, the parts of a name, or evaluate OFFSET/INDIRECT) |
 | Window | ← | From an argument, back up to the top row; from the top row, back one level |
@@ -54,7 +56,15 @@ The list is a small tree. Its top row (bold) is the cell being traced, and its a
 opens on the top row, where Excel already is, so **↓ or → takes you straight to the first argument**, even when the
 formula has only one. Excel's selection, including the sheet tab, follows every move.
 
-The Tracer ribbon tab has a **Trace error** button for the active cell. It also switches the shortcuts to Ctrl+[ / Ctrl+], which replaces Excel's built-in Go To Precedents/Dependents, turns index-at-idle on or off, and rebuilds the index.
+\* **Customizable.** Open **Tracer › Shortcuts…** and give each action a shortcut and an alternate: click a box and
+press the keys. **Excel brackets** switches to Ctrl+[ / Ctrl+], which replaces Excel's built-in Go To
+Precedents/Dependents.
+- Shortcuts need Ctrl or Alt (F1–F12 may be used alone).
+- The dialog refuses duplicates and warns before you override common Excel keys such as Ctrl+C.
+- Your tracing shortcuts also work inside the trace window.
+
+The Tracer ribbon tab also has buttons for each trace (their tooltips show the current keys), plus index-at-idle
+and Rebuild index.
 
 ## What it understands
 
@@ -146,6 +156,17 @@ To release a new version:
    - the tagged commit isn't on `main`.
 
 The running build's version is shown in the trace window's title bar.
+
+## Why Windows warns
+
+Windows shows the publisher of a program only from its **code-signing signature**. The installer's file details say
+"Gustavo Silva", but without a signature SmartScreen still reports "Unknown publisher". There are two ways to remove
+the warning:
+- **A code-signing certificate** in the author's verified name, either one bought from a certificate authority or one
+  issued through Microsoft's managed signing service. Once one exists, CI can sign every release automatically.
+  Even signed files can still be warned about for a while, until they build up download reputation with SmartScreen.
+- **For your own machine only:** **Unblock** the downloaded file (right-click › Properties) or choose **Run anyway**.
+  After installation nothing warns again, because the installer writes the add-in files itself.
 
 ## Known limitations
 

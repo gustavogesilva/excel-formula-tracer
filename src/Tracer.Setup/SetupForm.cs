@@ -50,6 +50,8 @@ internal sealed class SetupForm : Form
         _install = new Button { Text = "Install", Size = new Size(100, 30), Location = new Point(204, 208) };
         _uninstall = new Button { Text = "Uninstall", Size = new Size(100, 30), Location = new Point(314, 208) };
         var close = new Button { Text = "Close", Size = new Size(100, 30), Location = new Point(424, 208), DialogResult = DialogResult.Cancel };
+        // The form runs modeless (Application.Run), where a button's DialogResult does not close it.
+        close.Click += (_, _) => Close();
         _install.Click += (_, _) => DoInstall();
         _uninstall.Click += (_, _) =>
         {
@@ -93,7 +95,8 @@ internal sealed class SetupForm : Form
             Installer.Install(_found);
             MessageBox.Show(this,
                 "Formula Tracer is installed.\n\nStart Excel: the Tracer tab is on the ribbon.\n"
-                + "Ctrl+Q traces precedents, Ctrl+Shift+Q traces dependents.",
+                + "Ctrl+Q traces precedents, Ctrl+Shift+Q traces dependents.\n"
+                + "Change the keys in Tracer › Shortcuts….",
                 Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is InvalidOperationException || ex is System.Security.SecurityException)
