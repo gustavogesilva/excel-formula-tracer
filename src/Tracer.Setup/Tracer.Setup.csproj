@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Per-user installer: one FormulaTracerSetup.exe with both packed .xll builds embedded. Builds on Windows or Linux. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <AssemblyName>FormulaTracerSetup</AssemblyName>
+    <RootNamespace>Tracer.Setup</RootNamespace>
+    <!-- asInvoker stops Windows' installer detection (exe named *Setup*) from forcing a UAC prompt. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AddInPublishDir>$(MSBuildThisFileDirectory)..\Tracer.AddIn\bin\$(Configuration)\net48\publish\</AddInPublishDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Build order only: the add-in must be built and packed before its .xll files are embedded. -->
+    <ProjectReference Include="..\Tracer.AddIn\Tracer.AddIn.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(AddInPublishDir)FormulaTracer64-packed.xll" LogicalName="FormulaTracer64.xll" />
+    <EmbeddedResource Include="$(AddInPublishDir)FormulaTracer-packed.xll" LogicalName="FormulaTracer32.xll" />
+  </ItemGroup>
+</Project>

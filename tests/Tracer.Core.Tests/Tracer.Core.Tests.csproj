@@ -11,4 +11,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Tracer.Core\Tracer.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Pure installer logic from the (net48, Windows-only) setup project, tested here. -->
+    <Compile Include="..\..\src\Tracer.Setup\OpenValues.cs" Link="Setup\OpenValues.cs" />
+    <Compile Include="..\..\src\Tracer.Setup\PeFile.cs" Link="Setup\PeFile.cs" />
+  </ItemGroup>
 </Project>

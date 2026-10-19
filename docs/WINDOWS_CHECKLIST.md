@@ -4,6 +4,29 @@ The engine is unit-tested on Linux, but nothing that touches Excel could be run 
 desktop Excel (Microsoft 365, and Excel 2016/2019 if you support them) with `FormulaTracer64-packed.xll` loaded.
 Items marked **(assumption)** are behaviours the code relies on that were not verified.
 
+## Installer (`FormulaTracerSetup.exe`)
+
+- [ ] Running the downloaded exe shows SmartScreen ("More info › Run anyway") but **no** UAC/admin prompt.
+- [ ] The dialog shows the detected Excel version, bitness and path, and "not installed".
+- [ ] With Excel open, Install asks you to close Excel; Retry continues once it is closed.
+- [ ] After Install:
+  - [ ] `%LOCALAPPDATA%\FormulaTracer` holds `FormulaTracer.xll` and `FormulaTracerSetup.exe`;
+  - [ ] `HKCU\Software\Microsoft\Office\16.0\Excel\Options` has an `OPEN…` value `/R "…\FormulaTracer.xll"`;
+  - [ ] other add-ins' `OPEN` values are unchanged and still consecutive.
+- [ ] Start Excel:
+  - [ ] the **Tracer** tab is on the ribbon;
+  - [ ] File › Options › Add-ins lists *Formula Tracer* as active;
+  - [ ] no "blocked add-in" warning appears (the file carries no Mark-of-the-Web);
+  - [ ] the tab is still there after closing and reopening Excel.
+- [ ] 32-bit Excel gets the 32-bit add-in. Check that it loads.
+- [ ] A copy you loaded by hand earlier (`…\Downloads\FormulaTracer64-packed.xll`) is replaced, not loaded twice.
+- [ ] Running the installer again shows "Update" and keeps everything working.
+- [ ] Settings › Apps lists *Formula Tracer for Excel 0.1.0*. Uninstall from there, then confirm:
+  - [ ] the folder disappears within a few seconds;
+  - [ ] Excel starts without the add-in;
+  - [ ] the `OPEN` values are renumbered without gaps.
+- [ ] `FormulaTracerSetup.exe /install /quiet` and `/uninstall /quiet` work silently. Exit code 2 means Excel was running.
+
 ## Setup
 
 - [ ] Load the `.xll`. Expect no security error beyond the usual "enable this add-in" prompt.

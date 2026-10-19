@@ -6,12 +6,31 @@ Excel's selection follows as you arrow through the list.
 
 ## Install
 
-1. Download `FormulaTracer64-packed.xll` (64-bit Excel) or `FormulaTracer-packed.xll` (32-bit) from the latest
-   CI run's `FormulaTracer-xll` artifact, or build it yourself (below).
-2. Open it in Excel (double-click, or File › Options › Add-ins › Manage Excel Add-ins › Browse to keep it loaded).
+1. Download `FormulaTracerSetup.exe` from the
+   [latest release](https://github.com/gustavogesilva/excel-formula-tracer/releases/latest).
+2. Close Excel, then run the installer and click **Install**.
+   - The installer isn't code-signed, so Windows SmartScreen may show "Windows protected your PC". Click
+     **More info › Run anyway**.
+3. Start Excel. The **Tracer** tab appears on the ribbon, and *Formula Tracer* is ticked under File › Options ›
+   Add-ins.
 
-Nothing else is installed: no installer, admin rights, registry entries or server. It runs on the .NET Framework 4.8
-that ships with Windows 10/11.
+What the installer does:
+- Installs for your Windows user only, with no administrator rights.
+- Detects whether Excel is 32- or 64-bit and copies the matching add-in to `%LOCALAPPDATA%\FormulaTracer`.
+- Ticks it in Excel's add-in list. It does this with the same registry entries the Add-ins dialog writes, so it also
+  replaces any copy you loaded by hand.
+- Adds an entry to **Settings › Apps** so you can uninstall it.
+
+Running the installer again updates the add-in. Silent options: `FormulaTracerSetup.exe /install /quiet` and
+`/uninstall /quiet`.
+
+The add-in runs on the .NET Framework 4.8 that ships with Windows 10/11. Nothing else is installed: no services,
+no server, nothing system-wide.
+
+**Without the installer:** download `FormulaTracer64-packed.xll` (64-bit Excel) or `FormulaTracer-packed.xll`
+(32-bit) from the release and load it via File › Options › Add-ins › Manage Excel Add-ins › Browse. Microsoft 365
+blocks downloaded `.xll` files by default. To unblock the file: right-click it › Properties › tick **Unblock**. The
+installer avoids this because it writes the file itself.
 
 ## Keys
 
@@ -92,6 +111,7 @@ Correctness of the compressed index is checked against a per-cell brute force on
 ```
 src/Tracer.Core       netstandard2.0, no Excel references: parser, binder, index, trace engine
 src/Tracer.AddIn      net48 Excel-DNA add-in: COM access, window, hotkeys, ribbon, event sync
+src/Tracer.Setup      net48 per-user installer (FormulaTracerSetup.exe) with both .xll builds embedded
 tests/Tracer.Core.Tests
 bench/Tracer.Bench
 docs/WINDOWS_CHECKLIST.md   manual test plan for Excel
@@ -103,9 +123,15 @@ Requires the .NET 8 SDK. This works on Windows or Linux: Excel-DNA 1.9 packs `.x
 
 ```
 dotnet test tests/Tracer.Core.Tests
-dotnet build src/Tracer.AddIn -c Release
-# -> src/Tracer.AddIn/bin/Release/net48/publish/FormulaTracer64-packed.xll
+dotnet build src/Tracer.Setup -c Release      # also builds and packs the add-in
+# -> src/Tracer.Setup/bin/Release/net48/FormulaTracerSetup.exe
+# -> src/Tracer.AddIn/bin/Release/net48/publish/FormulaTracer64-packed.xll (and the 32-bit FormulaTracer-packed.xll)
 ```
+
+To release a new version:
+1. Bump `<Version>` in `Directory.Build.props`.
+2. Push a tag such as `v0.2.0`.
+3. CI publishes a GitHub Release with the installer and both `.xll` files.
 
 ## Known limitations
 

@@ -7,5 +7,6 @@
     <Authors>gustavogesilva</Authors>
     <Product>Excel Formula Tracer</Product>
     <Copyright>Copyright (c) 2026 gustavogesilva</Copyright>
+    <Version>0.1.0</Version>
   </PropertyGroup>
 </Project>
