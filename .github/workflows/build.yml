@@ -1,0 +1,24 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    # Excel-DNA 1.9 packs .xll files on Linux too, so no Windows runner is needed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Test core
+        run: dotnet test tests/Tracer.Core.Tests -c Release
+      - name: Build add-in
+        run: dotnet build src/Tracer.AddIn -c Release
+      - name: Upload .xll
+        uses: actions/upload-artifact@v4
+        with:
+          name: FormulaTracer-xll
+          path: src/Tracer.AddIn/bin/Release/net48/publish/*.xll

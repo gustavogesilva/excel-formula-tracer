@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Excel-DNA add-in. Builds on Windows or Linux; output: bin/<cfg>/net48/publish/FormulaTracer64-packed.xll (and the 32-bit FormulaTracer-packed.xll). -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Tracer.AddIn</RootNamespace>
+    <ExcelAddInName>Formula Tracer</ExcelAddInName>
+    <ExcelAddInFileName>FormulaTracer</ExcelAddInFileName>
+    <ExcelDnaPackXllSuffix>-packed</ExcelDnaPackXllSuffix>
+    <RunExcelDnaSetDebuggerOptions>false</RunExcelDnaSetDebuggerOptions>
+    <!-- Embed the engine in the packed .xll so the add-in is a single file. -->
+    <ExcelAddInInclude>Tracer.Core.dll</ExcelAddInInclude>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ExcelDna.AddIn" Version="1.9.0" />
+    <PackageReference Include="ExcelDna.Interop" Version="15.0.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Tracer.Core\Tracer.Core.csproj" />
+  </ItemGroup>
+</Project>

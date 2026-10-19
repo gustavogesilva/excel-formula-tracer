@@ -1,0 +1,450 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Reflection;
+using System.Runtime.InteropServices;
+using ExcelDna.Integration;
+using Microsoft.Office.Interop.Excel;
+using Tracer.Core.Binding;
+using Tracer.Core.Model;
+using Tracer.Core.Text;
+using Tracer.Core.Tracing;
+using XlRange = Microsoft.Office.Interop.Excel.Range;
+
+namespace Tracer.AddIn.Excel;
+
+/// <summary>
+/// All Excel object-model access. Every member must run on Excel's main thread
+/// (macro commands, ribbon callbacks, WinForms events of windows created on that thread).
+/// Reads are bulk (<c>object[,]</c> per call) because per-call COM overhead dominates.
+/// </summary>
+internal sealed class ExcelHost
+{
+    /// <summary>Cells per bulk read; bounds memory when UsedRange is bloated (e.g. formatting down to row 1M).</summary>
+    private const int ChunkCells = 65_536;
+    private static readonly TimeSpan SnapshotMaxAge = TimeSpan.FromSeconds(30);
+
+    private sealed class Snapshot
+    {
+        public WorkbookModel Model = null!;
+        public string SheetsKey = string.Empty;
+        public int NameCount;
+        public DateTime TakenUtc;
+    }
+
+    private readonly Dictionary<string, Snapshot> _snapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _structureDirty = new(StringComparer.OrdinalIgnoreCase);
+    private bool? _hasFormula2;
+
+    public static ExcelHost Instance { get; } = new();
+
+    public TraceEngine Engine { get; } = new();
+
+    public static Application App => (Application)ExcelDnaUtil.Application;
+
+    // ---- workbook structure ---------------------------------------------------------------
+
+    /// <summary>Forces the next <see cref="EnsureModel"/> for this workbook to re-read names, tables and sheets.</summary>
+    public void InvalidateStructure(string book) => _structureDirty.Add(book);
+
+    /// <summary>Keeps the engine's workbook model current, re-reading names/tables only when something looks changed.</summary>
+    public WorkbookModel EnsureModel(Workbook wb)
+    {
+        string name = wb.Name;
+        var sheets = new List<string>();
+        foreach (Worksheet ws in wb.Worksheets) sheets.Add(ws.Name);
+        string sheetsKey = string.Join("\u0001", sheets);
+        int nameCount = wb.Names.Count;
+
+        if (_snapshots.TryGetValue(name, out var snap) && !_structureDirty.Contains(name)
+            && snap.SheetsKey == sheetsKey && snap.NameCount == nameCount && DateTime.UtcNow - snap.TakenUtc < SnapshotMaxAge)
+            return snap.Model;
+
+        var model = new WorkbookModel(name, sheets, ReadNames(wb), ReadTables(wb));
+        _snapshots[name] = new Snapshot { Model = model, SheetsKey = sheetsKey, NameCount = nameCount, TakenUtc = DateTime.UtcNow };
+        _structureDirty.Remove(name);
+        Engine.UpdateBook(model);
+        return model;
+    }
+
+    /// <summary>Syncs the engine with the set of open workbooks (closed/renamed books are dropped).</summary>
+    public List<Workbook> ReconcileBooks()
+    {
+        var open = new List<Workbook>();
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (Workbook wb in App.Workbooks)
+        {
+            open.Add(wb);
+            names.Add(wb.Name);
+        }
+        var gone = new List<string>();
+        foreach (var b in Engine.Workspace.Books)
+            if (!names.Contains(b.Name)) gone.Add(b.Name);
+        foreach (var b in gone)
+        {
+            Engine.RemoveBook(b);
+            _snapshots.Remove(b);
+        }
+        foreach (var wb in open) EnsureModel(wb);
+        return open;
+    }
+
+    private static List<NameDef> ReadNames(Workbook wb)
+    {
+        var list = new List<NameDef>();
+        foreach (Name n in wb.Names)
+        {
+            try
+            {
+                string full = n.Name;
+                int bang = full.LastIndexOf('!');
+                string bare = bang >= 0 ? full.Substring(bang + 1) : full;
+                string? scope = (n.Parent as Worksheet)?.Name;
+                if (n.RefersToR1C1 is string refers) list.Add(new NameDef(bare, scope, refers));
+            }
+            catch (COMException)
+            {
+                // Some names (e.g. broken external links) throw on access; skip them.
+            }
+        }
+        return list;
+    }
+
+    private static List<TableDef> ReadTables(Workbook wb)
+    {
+        var list = new List<TableDef>();
+        foreach (Worksheet ws in wb.Worksheets)
+        {
+            var los = ws.ListObjects;
+            if (los.Count == 0) continue;
+            foreach (ListObject lo in los)
+            {
+                try
+                {
+                    XlRange all = lo.Range;
+                    int top = all.Row, firstCol = all.Column;
+                    int header = lo.ShowHeaders ? top : 0;
+                    XlRange? body = lo.DataBodyRange;
+                    int firstData = body?.Row ?? (header > 0 ? header + 1 : top);
+                    int lastData = body != null ? body.Row + body.Rows.Count - 1 : firstData - 1;
+                    int totals = lo.ShowTotals ? lo.TotalsRowRange.Row : 0;
+                    var cols = new List<string>();
+                    foreach (ListColumn lc in lo.ListColumns) cols.Add(lc.Name);
+                    list.Add(new TableDef(lo.Name, ws.Name, header, firstData, lastData, totals, firstCol, cols));
+                }
+                catch (COMException)
+                {
+                }
+            }
+        }
+        return list;
+    }
+
+    // ---- formulas -----------------------------------------------------------------------
+
+    /// <summary>
+    /// <c>Formula2R1C1</c> (dynamic-array aware, Excel 365) with a fallback to <c>FormulaR1C1</c> on older builds.
+    /// Always en-US syntax regardless of the user's locale. One COM call for any range size.
+    /// </summary>
+    public object? ReadFormulasR1C1(XlRange r)
+    {
+        if (_hasFormula2 != false)
+        {
+            try
+            {
+                var v = r.GetType().InvokeMember("Formula2R1C1", BindingFlags.GetProperty, null, r, null);
+                _hasFormula2 = true;
+                return v;
+            }
+            catch (Exception ex) when (_hasFormula2 == null && (ex is TargetInvocationException || ex is COMException || ex is MissingMethodException))
+            {
+                _hasFormula2 = false;
+            }
+        }
+        return r.FormulaR1C1;
+    }
+
+    /// <summary>A1 formula for display, <c>Formula2</c> when available so no implicit-intersection <c>@</c> is added.</summary>
+    public string? ReadFormulaA1(XlRange cell)
+    {
+        if (_hasFormula2 == true)
+        {
+            try
+            {
+                return cell.GetType().InvokeMember("Formula2", BindingFlags.GetProperty, null, cell, null) as string;
+            }
+            catch (Exception ex) when (ex is TargetInvocationException || ex is COMException)
+            {
+            }
+        }
+        return cell.Formula as string;
+    }
+
+    /// <summary>The cell's R1C1 formula, or null when it holds a constant or nothing.</summary>
+    public string? ReadFormula(XlRange cell) =>
+        ReadFormulasR1C1(cell) is string s && s.Length > 1 && s[0] == '=' ? s : null;
+
+    /// <summary>Re-indexes one sheet: bulk-reads its used range in row chunks and feeds formula cells to the engine.</summary>
+    public int IndexSheet(Workbook wb, Worksheet ws)
+    {
+        var writer = Engine.BeginSheet(wb.Name, ws.Name);
+        int count = 0;
+        XlRange used = ws.UsedRange;
+        int r0 = used.Row, c0 = used.Column;
+        int nr = used.Rows.Count, nc = used.Columns.Count;
+        int chunk = Math.Max(1, ChunkCells / nc);
+
+        for (int off = 0; off < nr; off += chunk)
+        {
+            int rows = Math.Min(chunk, nr - off);
+            XlRange part = rows == nr ? used : ws.Range[ws.Cells[r0 + off, c0], ws.Cells[r0 + off + rows - 1, c0 + nc - 1]];
+            var v = ReadFormulasR1C1(part);
+            if (v is object[,] arr)
+            {
+                int lr = arr.GetLowerBound(0), lc = arr.GetLowerBound(1);
+                int ur = arr.GetUpperBound(0), uc = arr.GetUpperBound(1);
+                for (int i = lr; i <= ur; i++)
+                    for (int j = lc; j <= uc; j++)
+                        if (arr[i, j] is string s && s.Length > 1 && s[0] == '=')
+                        {
+                            writer.Add(r0 + off + (i - lr), c0 + (j - lc), s);
+                            count++;
+                        }
+            }
+            else if (v is string s1 && s1.Length > 1 && s1[0] == '=')
+            {
+                writer.Add(r0 + off, c0, s1);
+                count++;
+            }
+        }
+        writer.Commit();
+        return count;
+    }
+
+    /// <summary>Indexes every dirty or new sheet of every open workbook. Returns the number of sheets indexed.</summary>
+    public int EnsureIndexed(Action<string>? progress = null)
+    {
+        var books = ReconcileBooks();
+        int done = 0;
+        foreach (var (book, sheet) in Engine.SheetsNeedingIndex())
+        {
+            var wb = FindBook(books, book);
+            if (wb == null) continue;
+            progress?.Invoke($"Indexing {book} › {sheet}…");
+            if (wb.Worksheets[sheet] is Worksheet ws)
+            {
+                IndexSheet(wb, ws);
+                done++;
+            }
+        }
+        return done;
+    }
+
+    /// <summary>Indexes at most one pending sheet (for idle-time pre-building). Returns false when nothing is left.</summary>
+    public bool IndexNextPendingSheet()
+    {
+        var books = ReconcileBooks();
+        foreach (var (book, sheet) in Engine.SheetsNeedingIndex())
+        {
+            var wb = FindBook(books, book);
+            if (wb?.Worksheets[sheet] is Worksheet ws)
+            {
+                IndexSheet(wb, ws);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Workbook? FindBook(List<Workbook> books, string name)
+    {
+        foreach (var wb in books)
+            if (string.Equals(wb.Name, name, StringComparison.OrdinalIgnoreCase)) return wb;
+        return null;
+    }
+
+    // ---- cells, values, navigation ------------------------------------------------------------
+
+    public static (Workbook Book, Worksheet Sheet, XlRange Cell)? ActiveCell()
+    {
+        var app = App;
+        if (app.ActiveSheet is not Worksheet ws) return null;
+        XlRange? cell = app.ActiveCell;
+        if (cell == null) return null;
+        return ((Workbook)ws.Parent, ws, cell);
+    }
+
+    /// <summary>First area of the current selection (or the active cell if the selection is not a range).</summary>
+    public static (Workbook Book, Worksheet Sheet, CellRect Rect)? ActiveSelection()
+    {
+        var app = App;
+        if (app.ActiveSheet is not Worksheet ws) return null;
+        if (app.Selection is not XlRange sel)
+        {
+            var ac = app.ActiveCell;
+            if (ac == null) return null;
+            sel = ac;
+        }
+        return ((Workbook)ws.Parent, ws, RectOf(sel.Areas[1]));
+    }
+
+    public static CellRect RectOf(XlRange r) =>
+        new(r.Row, r.Column, r.Row + r.Rows.Count - 1, r.Column + r.Columns.Count - 1);
+
+    public static XlRange? GetRange(string book, string sheet, CellRect rect)
+    {
+        try
+        {
+            var wb = App.Workbooks[book];
+            var ws = (Worksheet)wb.Worksheets[sheet];
+            return ws.Range[A1.Address(rect, absolute: false)];
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+    }
+
+    public static bool Goto(string book, string sheet, CellRect rect)
+    {
+        var r = GetRange(book, sheet, rect);
+        if (r == null) return false;
+        try
+        {
+            App.Goto(r, false);
+            return true;
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Evaluates an A1 reference expression (OFFSET/INDIRECT) on a sheet. Returns the referenced range, if any.</summary>
+    public static (string Book, string Sheet, CellRect Rect)? EvaluateReference(string book, string sheet, string expressionA1)
+    {
+        try
+        {
+            var ws = (Worksheet)App.Workbooks[book].Worksheets[sheet];
+            if (ws.Evaluate(expressionA1) is XlRange r)
+            {
+                var area = r.Areas[1];
+                var tws = area.Worksheet;
+                return (((Workbook)tws.Parent).Name, tws.Name, RectOf(area));
+            }
+        }
+        catch (COMException)
+        {
+        }
+        return null;
+    }
+
+    /// <summary>The dynamic-array spill range of an anchor cell (Excel 365), else null.</summary>
+    public static CellRect? SpillRange(string book, string sheet, CellRect anchor)
+    {
+        var cell = GetRange(book, sheet, anchor);
+        if (cell == null) return null;
+        try
+        {
+            if (cell.GetType().InvokeMember("SpillingToRange", BindingFlags.GetProperty, null, cell, null) is XlRange spill)
+                return RectOf(spill);
+        }
+        catch (Exception ex) when (ex is TargetInvocationException || ex is COMException || ex is MissingMethodException)
+        {
+        }
+        return null;
+    }
+
+    /// <summary>Value and A1 formula of a single cell for display.</summary>
+    public (string Value, string? Formula) ReadCell(string book, string sheet, CellRect cell)
+    {
+        var r = GetRange(book, sheet, cell);
+        if (r == null) return ("", null);
+        try
+        {
+            object? v = r.Value2;
+            string? f = r.HasFormula is true ? ReadFormulaA1(r) : null;
+            return (FormatValue(v), f);
+        }
+        catch (COMException)
+        {
+            return ("", null);
+        }
+    }
+
+    /// <summary>Non-empty cells of a range with value and formula, from two bulk reads (capped).</summary>
+    public List<(CellRect Cell, string Value, string? FormulaR1C1)> ReadRangeCells(string book, string sheet, CellRect rect, int max, out bool truncated)
+    {
+        truncated = false;
+        var list = new List<(CellRect, string, string?)>();
+        // Whole columns/rows: clip to the used range first.
+        var r = GetRange(book, sheet, rect);
+        if (r == null) return list;
+        try
+        {
+            XlRange used = r.Worksheet.UsedRange;
+            var ur = RectOf(used);
+            if (!ur.Intersects(rect)) return list;
+            var clip = ur.Intersect(rect);
+            if (!clip.Equals(rect)) r = r.Worksheet.Range[A1.Address(clip, absolute: false)];
+
+            object? values = r.Value2;
+            object? formulas = ReadFormulasR1C1(r);
+            if (values is object[,] va && formulas is object[,] fa)
+            {
+                int lr = va.GetLowerBound(0), lc = va.GetLowerBound(1);
+                for (int i = lr; i <= va.GetUpperBound(0); i++)
+                    for (int j = lc; j <= va.GetUpperBound(1); j++)
+                    {
+                        object? v = va[i, j];
+                        string? f = fa[i, j] as string;
+                        bool hasFormula = f != null && f.Length > 1 && f[0] == '=';
+                        if (v == null && !hasFormula) continue;
+                        if (list.Count >= max) { truncated = true; return list; }
+                        list.Add((CellRect.Cell(clip.Row1 + i - lr, clip.Col1 + j - lc), FormatValue(v), hasFormula ? f : null));
+                    }
+            }
+            else
+            {
+                string? f = formulas as string;
+                list.Add((clip, FormatValue(values), f != null && f.StartsWith("=") ? f : null));
+            }
+        }
+        catch (COMException)
+        {
+        }
+        return list;
+    }
+
+    public static string FormatValue(object? v) => v switch
+    {
+        null => "",
+        double d when d != 0 && (Math.Abs(d) >= 1e15 || Math.Abs(d) < 1e-6) => d.ToString("G6", CultureInfo.CurrentCulture),
+        double d => d.ToString("#,##0.######", CultureInfo.CurrentCulture),
+        string s => s,
+        bool b => b ? "TRUE" : "FALSE",
+        int code => ErrorText(code),
+        object[,] a => $"{{{a.GetLength(0)}×{a.GetLength(1)}}}",
+        _ => Convert.ToString(v, CultureInfo.CurrentCulture) ?? "",
+    };
+
+    /// <summary>Value2 returns cell errors as Int32 (0x800A07xx); the low word is Excel's xlErr code.</summary>
+    private static string ErrorText(int code) => (code & 0xFFFF) switch
+    {
+        2000 => "#NULL!",
+        2007 => "#DIV/0!",
+        2015 => "#VALUE!",
+        2023 => "#REF!",
+        2029 => "#NAME?",
+        2036 => "#NUM!",
+        2042 => "#N/A",
+        2043 => "#GETTING_DATA",
+        2045 => "#SPILL!",
+        2046 => "#CONNECT!",
+        2047 => "#BLOCKED!",
+        2048 => "#UNKNOWN!",
+        2049 => "#FIELD!",
+        2050 => "#CALC!",
+        _ => code.ToString(CultureInfo.InvariantCulture),
+    };
+}
