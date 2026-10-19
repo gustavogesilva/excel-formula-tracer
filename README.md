@@ -54,6 +54,9 @@ installer avoids this because it writes the file itself.
 | Window | Esc | Return to where you started and close |
 | Window | Ctrl+C | Copy the selected address |
 
+While the window is open, the row and column of the cell you're on are shaded across the grid (switch off with
+**Tracer › Highlight row & column**).
+
 The list is a small tree. Its top row (bold) is the cell being traced, and its arguments sit underneath. The window
 opens on the top row, where Excel already is, so **↓ or → takes you straight to the first argument**, even when the
 formula has only one. Excel's selection, including the sheet tab, follows every move.
@@ -65,8 +68,8 @@ Precedents/Dependents.
 - The dialog refuses duplicates and warns before you override common Excel keys such as Ctrl+C.
 - Your tracing shortcuts also work inside the trace window.
 
-The Tracer ribbon tab also has buttons for each trace (their tooltips show the current keys), plus index-at-idle
-and Rebuild index.
+The Tracer ribbon tab also has buttons for each trace (their tooltips show the current keys), plus the row and column
+highlight, index-at-idle and Rebuild index.
 
 ## What it understands
 
@@ -89,6 +92,19 @@ Browsing is unaffected: the editor costs nothing until it is opened.
 As with any add-in or macro that writes a cell, Excel then clears its own undo history. **Ctrl+Z in the trace
 window** restores the previous formula (up to 50 edits). Excel's Ctrl+Z is also pointed at that undo when Excel
 allows it.
+
+### Row and column highlight
+
+While the trace window is open, the row and column of the cell Excel is on are shaded across the visible grid, like
+crosshairs; the cell itself stays clear. The highlight follows every move and also follows scrolling, zoom and window
+resizing. It disappears when the window closes. A range gets all of its rows and columns shaded.
+
+- **It writes nothing to the workbook.** It is a separate, click-through window drawn over Excel's grid, so the file
+  isn't marked as changed and Excel's undo history is untouched. It works on any Excel version.
+- **Cost per move:** about 15 reads of cell and window positions plus one repaint, expected well under 2 ms.
+  With timings on, the status line shows it: "move N ms (highlight M)".
+- **Alternative in Microsoft 365:** Excel's own **View › Focus Cell** highlights the active cell's row and column, and
+  works with the tracer because the tracer moves Excel's real selection. Turn this highlight off if you use Focus Cell.
 
 ### Tracing an error to its root
 

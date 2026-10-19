@@ -33,12 +33,15 @@ internal sealed class TraceWindow : Form
     private readonly ListView _list;
     private readonly Label _status;
     private readonly Font _rootFont;
+    private readonly CrosshairOverlay _crosshair = new();
     private readonly Stack<Level> _history = new();
     private Level _level = new();
     private ListViewItem?[] _rows = { null };
     private Dictionary<int, Color> _spanColors = new();
     private SavedPosition? _origin;
     private bool _suppressNavigation;
+    /// <summary>Time of the last move (Excel's Goto, then the row/column highlight), for the status line.</summary>
+    private string? _moveTiming;
     /// <summary>The formula box is open for editing (F2): keys go to it, except Enter / Esc / Alt+Enter.</summary>
     private bool _editing;
     private static readonly Color EditBackColor = Color.FromArgb(255, 251, 230);
@@ -126,9 +129,14 @@ internal sealed class TraceWindow : Form
         PlaceOnScreen();
         Display(level);
         if (!Visible) Show();
+        // Excel is already at the traced cell.
+        if (level.Root.HasTarget) ShowCrosshair(level.Root);
         Activate();
         _list.Focus();
     }
+
+    /// <summary>Ribbon › Highlight row &amp; column switched off.</summary>
+    public void HideCrosshair() => _crosshair.HideOverlay();
 
     public void SetStatus(string text)
     {
@@ -147,6 +155,7 @@ internal sealed class TraceWindow : Form
             _list.VirtualListSize = 0;
 
             _level = level;
+            _moveTiming = null;
             int rows = ListNavigation.RowCount(level.Items.Count);
             _rows = new ListViewItem?[rows];
             _spanColors = new Dictionary<int, Color>();
@@ -176,6 +185,7 @@ internal sealed class TraceWindow : Form
     {
         var parts = new List<string> { $"{_level.Mode} · {_level.Items.Count} item{(_level.Items.Count == 1 ? "" : "s")}" };
         if (Settings.Current.ShowTimings && _level.Millis > 0) parts.Add($"{_level.Millis:F1} ms");
+        if (Settings.Current.ShowTimings && _moveTiming != null) parts.Add(_moveTiming);
         if (!string.IsNullOrEmpty(_level.Note)) parts.Add(_level.Note);
         parts.Add("↑↓ go · → into · ← up/back · Tab in/out · E error root · F2 edit · Enter jump · Esc return");
         _status.Text = string.Join("   ", parts);
@@ -289,10 +299,24 @@ internal sealed class TraceWindow : Form
         _level.Selected = row;
         RenderFormula(row == 0 ? -1 : item.SpanStart);
         if (_suppressNavigation || !item.HasTarget) return;
+        var sw = Stopwatch.StartNew();
         ExcelHost.Goto(item.Book, item.Sheet, item.Rect);
+        double gotoMs = sw.Elapsed.TotalMilliseconds;
+        double highlightMs = ShowCrosshair(item);
+        _moveTiming = Settings.Current.HighlightCrosshair ? $"move {gotoMs + highlightMs:F1} ms (highlight {highlightMs:F1})" : $"move {gotoMs:F1} ms";
+        UpdateStatus();
         // Goto can activate another workbook window; take focus back so arrows keep working.
         Activate();
         _list.Focus();
+    }
+
+    /// <summary>Moves the row/column highlight to where Excel now is. Returns the time it took, in ms.</summary>
+    private double ShowCrosshair(TraceItem item)
+    {
+        if (!Settings.Current.HighlightCrosshair) return 0;
+        var sw = Stopwatch.StartNew();
+        _crosshair.ShowAt(item.Book, item.Sheet, item.Rect);
+        return sw.Elapsed.TotalMilliseconds;
     }
 
     // ---- keys ---------------------------------------------------------------------------
@@ -540,7 +564,7 @@ internal sealed class TraceWindow : Form
             return;
         }
         Display(_history.Pop());
-        if (Selected is { HasTarget: true } item) ExcelHost.Goto(item.Book, item.Sheet, item.Rect);
+        if (Selected is { HasTarget: true } item && ExcelHost.Goto(item.Book, item.Sheet, item.Rect)) ShowCrosshair(item);
         Activate();
     }
 
@@ -555,6 +579,7 @@ internal sealed class TraceWindow : Form
     private void CloseWindow(bool restore)
     {
         if (_editing) EndEdit();
+        _crosshair.HideOverlay();
         Settings.Current.WindowBounds = Bounds;
         Settings.Current.Save();
         Hide();
@@ -664,7 +689,7 @@ internal sealed class TraceWindow : Form
     }
 
     /// <summary>Sets a WinForms form's owner to a native (Excel) window handle.</summary>
-    private static class NativeOwner
+    internal static class NativeOwner
     {
         private const int GWL_HWNDPARENT = -8;
 

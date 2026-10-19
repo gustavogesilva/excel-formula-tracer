@@ -21,6 +21,8 @@ internal sealed class Settings
     public bool Prebuild { get; set; } = true;
     /// <summary>Show timings in the status line.</summary>
     public bool ShowTimings { get; set; } = true;
+    /// <summary>Highlight the row and column of the cell the trace window moves to.</summary>
+    public bool HighlightCrosshair { get; set; } = true;
     public Rectangle? WindowBounds { get; set; }
 
     private static Settings Load()
@@ -40,6 +42,7 @@ internal sealed class Settings
             s.Shortcuts = ShortcutMap.Read(kv);
             if (kv.TryGetValue("Prebuild", out var p) && bool.TryParse(p, out var pb)) s.Prebuild = pb;
             if (kv.TryGetValue("ShowTimings", out var t) && bool.TryParse(t, out var st)) s.ShowTimings = st;
+            if (kv.TryGetValue("HighlightCrosshair", out var c) && bool.TryParse(c, out var hc)) s.HighlightCrosshair = hc;
             if (kv.TryGetValue("WindowBounds", out var b))
             {
                 var parts = b.Split(',');
@@ -70,6 +73,7 @@ internal sealed class Settings
             var lines = kv.Select(p => p.Key + "=" + p.Value).ToList();
             lines.Add("Prebuild=" + Prebuild);
             lines.Add("ShowTimings=" + ShowTimings);
+            lines.Add("HighlightCrosshair=" + HighlightCrosshair);
             if (WindowBounds is Rectangle r)
                 lines.Add(string.Format(CultureInfo.InvariantCulture, "WindowBounds={0},{1},{2},{3}", r.X, r.Y, r.Width, r.Height));
             File.WriteAllLines(FilePath, lines);

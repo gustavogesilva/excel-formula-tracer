@@ -26,6 +26,7 @@ public sealed class Ribbon : ExcelRibbon
         </group>
         <group id='ftOptions' label='Options'>
           <button id='ftShortcuts' label='Shortcuts…' onAction='OnShortcuts' screentip='Choose the keyboard shortcuts for tracing'/>
+          <checkBox id='ftCrosshair' label='Highlight row &amp; column' getPressed='GetCrosshair' onAction='OnCrosshair' screentip='While tracing, shade the row and column of the cell you move to'/>
           <checkBox id='ftPrebuild' label='Index at idle' getPressed='GetPrebuild' onAction='OnPrebuild' screentip='Build the dependents index in the background after a workbook opens'/>
           <button id='ftRebuild' label='Rebuild index' imageMso='Refresh' onAction='OnRebuild'/>
         </group>
@@ -68,6 +69,15 @@ public sealed class Ribbon : ExcelRibbon
             MessageBox.Show("Excel did not accept these shortcuts:\n\n" + string.Join("\n", refused), "Formula Tracer",
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
     });
+
+    public bool GetCrosshair(IRibbonControl control) => Settings.Current.HighlightCrosshair;
+
+    public void OnCrosshair(IRibbonControl control, bool pressed)
+    {
+        Settings.Current.HighlightCrosshair = pressed;
+        Settings.Current.Save();
+        if (!pressed) TraceController.Instance.Window.HideCrosshair();
+    }
 
     public bool GetPrebuild(IRibbonControl control) => Settings.Current.Prebuild;
 

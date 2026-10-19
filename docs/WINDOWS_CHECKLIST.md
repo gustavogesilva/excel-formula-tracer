@@ -96,6 +96,26 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
 - [ ] F2 on a range listing or name listing explains that you should press → into a cell first.
 - [ ] Record the apply time on a large model (it includes Excel's recalculation).
 
+## Row and column highlight (Tracer › Highlight row & column)
+
+- [ ] Opening a trace shades the traced cell's row and column across the visible grid; the cell itself stays clear.
+- [ ] ↑/↓ moves the bands with Excel's selection, with no visible lag. The status line shows
+      "move N ms (highlight M)": record M, and compare "move" with the checkbox off.
+- [ ] Clicks pass through the bands to Excel, and the bands never take focus from the trace window.
+- [ ] **(assumption: Pane.PointsToScreenPixelsX/Y are exact)** The bands line up with the cell edges at zoom 50%,
+      100% and 200%. Note any offset in pixels.
+- [ ] **(assumption: the grid window is XLDESK › EXCEL7 and the strips are the system scroll-bar size)** The bands
+      stop at the vertical scroll bar and the sheet-tab strip; they never spill outside the Excel window.
+- [ ] Frozen panes (rows and columns): the bands cross the frozen area too, aligned. Same with a split window.
+- [ ] Scroll with the mouse wheel, resize Excel, or change zoom while the window is open: the bands follow within
+      a fraction of a second. Scrolling the cell off screen hides its band(s).
+- [ ] Click another sheet tab: the bands disappear; back on the traced sheet they return.
+- [ ] Two workbook windows side by side (and on a second monitor with a different scaling): the bands sit on the
+      right window, at the right place.
+- [ ] Minimize Excel and restore it: no stray bands while minimized.
+- [ ] Esc, Enter and closing the window remove the bands. Unticking the checkbox removes them immediately.
+- [ ] A range target (dependents of a selection, a range row) shades all its rows and columns.
+
 ## Precedents coverage
 
 - [ ] Same-sheet, cross-sheet and cross-workbook references, ranges, whole columns (`SUM(B:B)`) and whole rows.
@@ -156,6 +176,7 @@ Record these for a real model, including its size (formula cells, sheets):
 |---|---|---|
 | Ctrl+Q to window shown | < 30 ms | |
 | ↓ to Excel selection moved | < 20 ms | |
+| Highlight part of that move | < 2 ms | |
 | First Ctrl+Shift+Q with index-at-idle off (full index incl. COM reads) | < 1.5 s per 500k formula cells | |
 | Ctrl+Shift+Q after editing one cell (one sheet re-read) | | |
 | Ctrl+Shift+Q with index warm | < 5 ms | |

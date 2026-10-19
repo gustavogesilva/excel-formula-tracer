@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using ExcelDna.Integration;
 using Microsoft.Office.Interop.Excel;
+using Tracer.AddIn.UI;
 using Tracer.Core.Binding;
 using Tracer.Core.Model;
 using Tracer.Core.Text;
@@ -351,6 +352,105 @@ internal sealed class ExcelHost : ICellReader
         catch (COMException)
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Where a range is drawn on screen, for the row/column highlight. Null when it is not on the active sheet of the
+    /// active window, or that window is minimized. Each pane converts with its own <c>PointsToScreenPixelsX/Y</c>,
+    /// which follow that pane's scrolling and the zoom (the Window-level methods ignore panes).
+    /// About 15 in-process calls for an unsplit window.
+    /// </summary>
+    public static CrosshairView? ScreenGeometry(string book, string sheet, CellRect rect)
+    {
+        var wnd = App.ActiveWindow;
+        if (wnd?.ActiveSheet is not Worksheet ws || !string.Equals(ws.Name, sheet, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(((Workbook)ws.Parent).Name, book, StringComparison.OrdinalIgnoreCase)) return null;
+        IntPtr hwnd = WindowHandle(wnd);
+        if (NativeWindows.IsIconic(hwnd)) return null;
+
+        XlRange target = ws.Range[A1.Address(rect, absolute: false)];
+        var (left, top, right, bottom) = Points(target);
+        var panes = new List<(PixelRect, PixelRect)>();
+        var all = wnd.Panes;
+        for (int i = 1; i <= all.Count; i++)
+        {
+            Pane pane = all[i];
+            var (vl, vt, vr, vb) = Points(pane.VisibleRange);
+            panes.Add((Pixels(pane, vl, vt, vr, vb), Pixels(pane, left, top, right, bottom)));
+        }
+        var viewport = NativeWindows.GridViewport(hwnd, wnd.DisplayVerticalScrollBar, wnd.DisplayHorizontalScrollBar || wnd.DisplayWorkbookTabs);
+        return new CrosshairView(hwnd, viewport, panes);
+    }
+
+    private static (double Left, double Top, double Right, double Bottom) Points(XlRange r)
+    {
+        double left = Convert.ToDouble(r.Left, CultureInfo.InvariantCulture), top = Convert.ToDouble(r.Top, CultureInfo.InvariantCulture);
+        return (left, top, left + Convert.ToDouble(r.Width, CultureInfo.InvariantCulture), top + Convert.ToDouble(r.Height, CultureInfo.InvariantCulture));
+    }
+
+    private static PixelRect Pixels(Pane pane, double left, double top, double right, double bottom) => new(
+        pane.PointsToScreenPixelsX(Round(left)), pane.PointsToScreenPixelsY(Round(top)),
+        pane.PointsToScreenPixelsX(Round(right)), pane.PointsToScreenPixelsY(Round(bottom)));
+
+    private static int Round(double points) => (int)Math.Round(Math.Min(points, int.MaxValue));
+
+    /// <summary>The window's own top-level handle (Excel 2013+ gives each workbook window one), else Excel's.</summary>
+    private static IntPtr WindowHandle(Window wnd)
+    {
+        try
+        {
+            // Late-bound: Window.Hwnd does not exist before Excel 2013.
+            if (wnd.GetType().InvokeMember("Hwnd", BindingFlags.GetProperty, null, wnd, null) is int h && h != 0) return new IntPtr(h);
+        }
+        catch (Exception ex) when (ex is TargetInvocationException || ex is COMException || ex is MissingMethodException)
+        {
+        }
+        return new IntPtr(App.Hwnd);
+    }
+
+    /// <summary>Win32 lookups of Excel's window layout: XLMAIN › XLDESK › EXCEL7 (the workbook's grid window).</summary>
+    private static class NativeWindows
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left, Top, Right, Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct POINT
+        {
+            public int X, Y;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr childAfter, string className, string? windowName);
+
+        [DllImport("user32.dll")]
+        private static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+
+        [DllImport("user32.dll")]
+        private static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
+
+        [DllImport("user32.dll")]
+        public static extern bool IsIconic(IntPtr hWnd);
+
+        /// <summary>
+        /// The grid window's client area on screen, less the scroll bars and sheet-tab strip at its right and bottom,
+        /// so the highlight never covers them or spills outside the window. Falls back to the main window's client area.
+        /// </summary>
+        public static PixelRect GridViewport(IntPtr main, bool verticalBar, bool bottomStrip)
+        {
+            var desk = FindWindowEx(main, IntPtr.Zero, "XLDESK", null);
+            var grid = desk == IntPtr.Zero ? IntPtr.Zero : FindWindowEx(desk, IntPtr.Zero, "EXCEL7", null);
+            var hwnd = grid != IntPtr.Zero ? grid : main;
+            if (!GetClientRect(hwnd, out var rc)) return default;
+            var origin = new POINT();
+            if (!ClientToScreen(hwnd, ref origin)) return default;
+            int right = origin.X + rc.Right - (grid != IntPtr.Zero && verticalBar ? System.Windows.Forms.SystemInformation.VerticalScrollBarWidth : 0);
+            int bottom = origin.Y + rc.Bottom - (grid != IntPtr.Zero && bottomStrip ? System.Windows.Forms.SystemInformation.HorizontalScrollBarHeight : 0);
+            return new PixelRect(origin.X, origin.Y, right, bottom);
         }
     }
 
