@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <Authors>gustavogesilva</Authors>
+    <Product>Excel Formula Tracer</Product>
+    <Copyright>Copyright (c) 2026 gustavogesilva</Copyright>
+  </PropertyGroup>
+</Project>
