@@ -259,7 +259,32 @@ public static class TemplateParser
                 if (string.Compare(_s, _i, e, 0, e.Length, StringComparison.OrdinalIgnoreCase) == 0)
                 {
                     if (e == "#REF!")
-                        AddRef(new RefToken(default, -1, _i, e.Length, _i, RefFlags.Broken));
+                    {
+                        // A deleted sheet leaves "#REF!R1C1" (or "#REF!Name"): the address belongs to the broken token.
+                        // The area is kept only for display; broken tokens are never bound or indexed.
+                        int start = _i;
+                        int end = _i + e.Length;
+                        int areaStart = start;
+                        Area broken = default;
+                        if (TryArea(end, out var area, out int areaEnd) && IsRefBoundary(areaEnd))
+                        {
+                            areaStart = end;
+                            broken = area;
+                            end = areaEnd;
+                            if (At(end) == ':' && TryArea(end + 1, out var area2, out int end2) && IsRefBoundary(end2) && TryMerge(area, area2, out var merged))
+                            {
+                                broken = merged;
+                                end = end2;
+                            }
+                        }
+                        else if (IsIdentStart(At(end)))
+                        {
+                            end = ReadIdent(end);
+                        }
+                        AddRef(new RefToken(broken, -1, start, end - start, areaStart, RefFlags.Broken));
+                        _i = end;
+                        return;
+                    }
                     _i += e.Length;
                     return;
                 }

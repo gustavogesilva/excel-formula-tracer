@@ -24,6 +24,7 @@ public class RenderTests
     [InlineData("=R1C1#*2", 3, 3, "=$A$1#*2")]
     [InlineData("=R[-1]C", 1, 1, "=A1048576")]
     [InlineData("=Sheet1!#REF!+R1C1", 1, 1, "=Sheet1!#REF!+$A$1")]
+    [InlineData("=#REF!R[1]C:R5C5+#REF!", 1, 1, "=#REF!A2:$E$5+#REF!")]
     public void ToA1(string r1c1, int row, int col, string expected)
     {
         var t = TemplateParser.Parse(r1c1);

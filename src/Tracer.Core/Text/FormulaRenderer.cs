@@ -53,7 +53,8 @@ public static class FormulaRenderer
         int pos = 0;
         foreach (var r in t.Refs)
         {
-            if ((r.Flags & RefFlags.Broken) != 0 || r.AreaStart < pos) continue;
+            // Broken tokens are rendered only when they keep an address (#REF!R1C1 from a deleted sheet).
+            if (((r.Flags & RefFlags.Broken) != 0 && r.AreaStart == r.Start) || r.AreaStart < pos) continue;
             int areaEnd = r.End - ((r.Flags & RefFlags.Spill) != 0 ? 1 : 0);
             sb.Append(s, pos, r.AreaStart - pos);
             anchors.Add((r.AreaStart, sb.Length));

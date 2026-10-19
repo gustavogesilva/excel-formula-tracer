@@ -54,6 +54,10 @@ public class ParserTests
     [InlineData("='C:\\dir\\[Book 2.xlsx]Sheet1'!R1C1", new[] { "C:\\dir\\[Book 2.xlsx]Sheet1!R1C1" })]
     [InlineData("=Rates!R1C1", new[] { "Rates!R1C1" })]
     [InlineData("=Sheet1!#REF!+1", new[] { "Sheet1!#REF!" })]
+    [InlineData("=#REF!+R1C1", new[] { "#REF!", "R1C1" })]
+    [InlineData("=#REF!R1C1+R2C2", new[] { "#REF!", "R2C2" })]
+    [InlineData("=SUM(#REF!R1C1:R5C1)", new[] { "#REF!" })]
+    [InlineData("=#REF!Rate*2", new[] { "#REF!" })]
     public void QualifiedReferences(string formula, string[] expected) => Assert.Equal(expected, Refs(P(formula)));
 
     [Fact]
@@ -219,6 +223,16 @@ public class ParserTests
     [InlineData("=))((,,")]
     [InlineData("=[")]
     public void MalformedInputDoesNotThrow(string formula) => TemplateParser.Parse(formula);
+
+    [Fact]
+    public void DeletedSheetReferenceIsOneBrokenToken()
+    {
+        var t = P("=#REF!R1C1:R5C1+1");
+        var r = Assert.Single(t.Refs);
+        Assert.Equal(RefFlags.Broken, r.Flags);
+        Assert.Equal("#REF!R1C1:R5C1", t.Formula.Substring(r.Start, r.Length));
+        Assert.Empty(t.Names);
+    }
 
     [Fact]
     public void SpansCoverTokens()
