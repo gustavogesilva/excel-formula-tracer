@@ -47,6 +47,25 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
       dynamic-array formula list the anchor only, not every spilled cell.
 - [ ] A text cell entered as `'=abc` is not treated as a formula.
 
+## Error roots (E in the window, or the Trace error ribbon button)
+
+- [ ] **Deleted sheet.** Reference Sheet2!A1 from a chain of formulas, then delete Sheet2. Expect:
+  - the formula reads `=#REF!A1`;
+  - E on the last cell of the chain lists the cell holding `#REF!A1`, with "contains #REF!";
+  - the Ctrl+Q list shows it as a broken row, **not** as A1 on the current sheet **(assumption: Excel writes
+    `#REF!A1` for refs to deleted sheets)**.
+- [ ] **Deleted row.** A formula referencing a deleted row (`=#REF!*2`) is listed as the root.
+- [ ] **Error inside a range.** `SUM(B1:B100)` with one `#REF!` inside: E lists only that one cell.
+- [ ] **Function-produced error.** E on `=INDEX(A1:A3,5)` (`#REF!`) or on a VLOOKUP `#N/A` lists that cell, with
+      "produced here".
+- [ ] **OFFSET off the sheet.** `=SUM(OFFSET(A1,-5,0))` is listed with "evaluates to #REF!" **(assumption:
+      `Worksheet.Evaluate` returns the error code for an OFFSET that goes off the sheet)**.
+- [ ] **Two independent roots** are both listed.
+- [ ] **Mixed errors.** A cell showing `#N/A` whose precedents hold both `#N/A` and `#REF!` follows only the `#N/A` path.
+- [ ] **No error.** E on a cell with no error says so.
+- [ ] **Ribbon icon.** The Trace error button shows an icon **(assumption: imageMso `TraceError` exists; an
+      unknown imageMso just leaves the button without an icon)**.
+
 ## Dependents and index upkeep
 
 - [ ] Ctrl+Shift+Q on an input cell lists dependents grouped into blocks (e.g. `Calc!$D$5:$O$5`).

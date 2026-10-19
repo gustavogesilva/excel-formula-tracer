@@ -13,6 +13,8 @@ internal enum TraceMode
 {
     Precedents,
     Dependents,
+    /// <summary>Root cells of an error value.</summary>
+    Errors,
 }
 
 /// <summary>One screen of the trace window: a trace of a cell/range, or a listing (cells of a range, parts of a name).</summary>
@@ -59,12 +61,14 @@ internal sealed class TraceController
         // Pressed again while the window is open (after clicking into the sheet): re-trace, keep the original return point.
         var origin = Window.Visible ? null : SavedPosition.Capture();
         Level? level;
-        if (mode == TraceMode.Precedents)
+        if (mode != TraceMode.Dependents)
         {
             var ac = ExcelHost.ActiveCell();
             if (ac == null) return;
             var (wb, ws, cell) = ac.Value;
-            level = Precedents(wb.Name, ws.Name, ExcelHost.RectOf(cell));
+            level = mode == TraceMode.Errors
+                ? ErrorRoots(wb.Name, ws.Name, ExcelHost.RectOf(cell))
+                : Precedents(wb.Name, ws.Name, ExcelHost.RectOf(cell));
         }
         else
         {
@@ -148,10 +152,47 @@ internal sealed class TraceController
         var result = _host.Engine.Precedents(book, sheet, focus.Row1, focus.Col1, formula);
         level.Formula = result.Formula.Text;
         level.Items = result.Items;
-        int dyn = result.Items.FindAll(i => i.Kind == TraceItemKind.Dynamic).Count;
-        if (dyn > 0) level.Note = "→ on an OFFSET/INDIRECT row evaluates it to its current target.";
+        var notes = new List<string>();
+        if (IsErrorText(value)) notes.Add("E traces this error to its root");
+        if (result.Items.Exists(i => i.Kind == TraceItemKind.Dynamic)) notes.Add("→ on an OFFSET/INDIRECT row evaluates it");
+        level.Note = string.Join(" · ", notes);
         return level;
     }
+
+    /// <summary>Cells where the error shown in <paramref name="cell"/> starts (see <see cref="TraceEngine.TraceErrorRoots"/>).</summary>
+    public Level ErrorRoots(string book, string sheet, CellRect cell)
+    {
+        _host.ReconcileBooks();
+        var focus = CellRect.Cell(cell.Row1, cell.Col1);
+        var result = _host.Engine.TraceErrorRoots(book, sheet, focus.Row1, focus.Col1, _host);
+        var (value, formula) = _host.ReadCell(book, sheet, focus);
+        var level = new Level
+        {
+            Mode = TraceMode.Errors,
+            Book = book,
+            Sheet = sheet,
+            Focus = focus,
+            FocusValue = value,
+            Formula = formula,
+            Items = result.Roots,
+            Title = result.Error == null
+                ? "No error in " + Address(book, sheet, focus)
+                : $"Root of {result.Error} in {Address(book, sheet, focus)}",
+        };
+        if (result.Error == null)
+        {
+            level.Note = "this cell's value is not an error";
+            return level;
+        }
+        var notes = new List<string> { $"{result.Roots.Count} root cell{(result.Roots.Count == 1 ? "" : "s")} · checked {result.Visited:N0} cell{(result.Visited == 1 ? "" : "s")}" };
+        if (result.Truncated) notes.Add($"stopped at {result.Visited:N0} cells, there may be more roots");
+        else if (result.Roots.Count == 0) notes.Add("no root found: the error goes round a circular reference");
+        level.Note = string.Join(" · ", notes);
+        return level;
+    }
+
+    internal static bool IsErrorText(string? value) =>
+        value != null && value.Length > 1 && value[0] == '#' && (value.EndsWith("!") || value.EndsWith("?") || value == "#N/A" || value == "#GETTING_DATA");
 
     public Level Dependents(string book, string sheet, CellRect rect)
     {
@@ -219,11 +260,11 @@ internal sealed class TraceController
         return item.Rect.IsSingleCell ? Precedents(item.Book, item.Sheet, item.Rect) : CellsOf(current, item, TraceMode.Precedents);
     }
 
-    /// <summary>Tab: the other direction for the same focus.</summary>
+    /// <summary>Tab: the other direction for the same focus (from an error trace: its dependents).</summary>
     public Level? Toggle(Level current) =>
-        current.Mode == TraceMode.Precedents
-            ? Dependents(current.Book, current.Sheet, current.Focus)
-            : Precedents(current.Book, current.Sheet, current.Focus);
+        current.Mode == TraceMode.Dependents
+            ? Precedents(current.Book, current.Sheet, current.Focus)
+            : Dependents(current.Book, current.Sheet, current.Focus);
 
     private bool ResolveDynamic(Level current, TraceItem item)
     {

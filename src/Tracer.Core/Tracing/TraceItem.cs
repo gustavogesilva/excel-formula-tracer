@@ -43,6 +43,8 @@ public sealed class TraceItem
     public bool IsSpill { get; set; }
     /// <summary>The cell's address only feeds OFFSET's base argument (its value is not used).</summary>
     public bool IsAddressOnly { get; set; }
+    /// <summary>Extra explanation shown after the label, e.g. why a cell is the root of an error.</summary>
+    public string? Detail { get; set; }
     public List<TraceItem>? Children { get; set; }
 
     public override string ToString() => $"{Kind} {Label}";

@@ -14,7 +14,7 @@ namespace Tracer.Core.Tracing;
 /// feeds sheet formulas when a sheet needs indexing, and asks for precedents/dependents.
 /// Not thread-safe: use from one thread (Excel's main thread).
 /// </summary>
-public sealed class TraceEngine
+public sealed partial class TraceEngine
 {
     private sealed class SheetState
     {

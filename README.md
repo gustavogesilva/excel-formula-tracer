@@ -25,11 +25,12 @@ that ships with Windows 10/11.
 | Window | ← / Backspace | Back one level |
 | Window | Tab | Switch between precedents and dependents of the same cell |
 | Window | Ctrl+Q / Ctrl+Shift+Q | Precedents / dependents of the selected row |
+| Window | E | Trace the error (`#REF!`, `#N/A`, …) in the selected row, or in the traced cell, back to its root cell(s) |
 | Window | Enter | Jump to the selected row and close |
 | Window | Esc | Return to where you started and close |
 | Window | Ctrl+C | Copy the selected address |
 
-The Tracer ribbon tab switches the shortcuts to Ctrl+[ / Ctrl+], which replaces Excel's built-in Go To Precedents/Dependents. It can also turn index-at-idle on or off and rebuild the index.
+The Tracer ribbon tab has a **Trace error** button for the active cell. It also switches the shortcuts to Ctrl+[ / Ctrl+], which replaces Excel's built-in Go To Precedents/Dependents, turns index-at-idle on or off, and rebuilds the index.
 
 ## What it understands
 
@@ -37,7 +38,24 @@ Same-sheet, cross-sheet and cross-workbook references; closed external workbooks
 references (`Jan:Dec!A1`); whole rows/columns; defined names (workbook- and sheet-scoped, relative, nested,
 LAMBDA names called like functions); structured references (`Table1[Col]`, `[@Col]`, `[#Headers]`, …);
 spill references (`A1#`); LET/LAMBDA locals (never mistaken for names); OFFSET/INDIRECT (evaluated on demand
-for precedents).
+for precedents); references to deleted sheets (`#REF!A1`, shown as broken rather than as a same-sheet cell).
+
+### Tracing an error to its root
+
+**E** (or **Trace error**) walks back from a cell showing an error and lists the cell(s) where that error starts,
+each with the reason.
+
+- **What it follows.** Errors pass through formulas unchanged, so only precedents holding the *same* error are
+  followed. Ranges are scanned with one bulk read.
+- **When a cell counts as a root:**
+  - its formula contains `#REF!` (a referenced cell, row, column or sheet was deleted);
+  - the error is typed in as a value;
+  - an OFFSET/INDIRECT in it evaluates to the error (e.g. it points off the sheet);
+  - it uses an unknown name (`#NAME?`);
+  - none of its precedents carry the error, so its own function produced it (INDEX out of range, VLOOKUP `#N/A`,
+    division by zero).
+- **Several roots.** All roots are listed; → on a root shows its precedents.
+- **Limits.** The search stops after 5,000 cells. A circular error with no root is reported as such.
 
 ## How it is fast
 

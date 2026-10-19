@@ -18,7 +18,7 @@ namespace Tracer.AddIn.Excel;
 /// (macro commands, ribbon callbacks, WinForms events of windows created on that thread).
 /// Reads are bulk (<c>object[,]</c> per call) because per-call COM overhead dominates.
 /// </summary>
-internal sealed class ExcelHost
+internal sealed class ExcelHost : ICellReader
 {
     /// <summary>Cells per bulk read; bounds memory when UsedRange is bloated (e.g. formatting down to row 1M).</summary>
     private const int ChunkCells = 65_536;
@@ -323,21 +323,81 @@ internal sealed class ExcelHost
     /// <summary>Evaluates an A1 reference expression (OFFSET/INDIRECT) on a sheet. Returns the referenced range, if any.</summary>
     public static (string Book, string Sheet, CellRect Rect)? EvaluateReference(string book, string sheet, string expressionA1)
     {
+        var t = EvaluateTarget(book, sheet, expressionA1);
+        return t.IsRange ? (t.Book, t.Sheet, t.Rect) : null;
+    }
+
+    /// <summary>The range an A1 reference expression points at, or the error it evaluates to (e.g. OFFSET off the sheet gives #REF!).</summary>
+    public static DynamicTarget EvaluateTarget(string book, string sheet, string expressionA1)
+    {
         try
         {
             var ws = (Worksheet)App.Workbooks[book].Worksheets[sheet];
-            if (ws.Evaluate(expressionA1) is XlRange r)
+            switch (ws.Evaluate(expressionA1))
             {
-                var area = r.Areas[1];
-                var tws = area.Worksheet;
-                return (((Workbook)tws.Parent).Name, tws.Name, RectOf(area));
+                case XlRange r:
+                    var area = r.Areas[1];
+                    var tws = area.Worksheet;
+                    return new DynamicTarget(((Workbook)tws.Parent).Name, tws.Name, RectOf(area));
+                case int code:
+                    return new DynamicTarget(ErrorText(code));
             }
         }
         catch (COMException)
         {
         }
-        return null;
+        return new DynamicTarget("#VALUE!");
     }
+
+    // ---- ICellReader (error-root tracing) ------------------------------------------------------
+
+    CellRead ICellReader.Read(string book, string sheet, int row, int col)
+    {
+        var r = GetRange(book, sheet, CellRect.Cell(row, col));
+        if (r == null) return default;
+        try
+        {
+            string? error = r.Value2 is int code ? ErrorText(code) : null;
+            return new CellRead(ReadFormula(r), error);
+        }
+        catch (COMException)
+        {
+            return default;
+        }
+    }
+
+    IEnumerable<(int Row, int Col)> ICellReader.ErrorCells(string book, string sheet, CellRect rect, string error, int max)
+    {
+        var found = new List<(int, int)>();
+        var r = GetRange(book, sheet, rect);
+        if (r == null) return found;
+        try
+        {
+            var ur = RectOf(r.Worksheet.UsedRange);
+            if (!ur.Intersects(rect)) return found;
+            var clip = ur.Intersect(rect);
+            if (!clip.Equals(rect)) r = r.Worksheet.Range[A1.Address(clip, absolute: false)];
+            switch (r.Value2)
+            {
+                case object[,] values:
+                    int lr = values.GetLowerBound(0), lc = values.GetLowerBound(1);
+                    for (int i = lr; i <= values.GetUpperBound(0) && found.Count < max; i++)
+                        for (int j = lc; j <= values.GetUpperBound(1) && found.Count < max; j++)
+                            if (values[i, j] is int code && ErrorText(code) == error)
+                                found.Add((clip.Row1 + i - lr, clip.Col1 + j - lc));
+                    break;
+                case int single when ErrorText(single) == error:
+                    found.Add((clip.Row1, clip.Col1));
+                    break;
+            }
+        }
+        catch (COMException)
+        {
+        }
+        return found;
+    }
+
+    DynamicTarget ICellReader.Evaluate(string book, string sheet, string expressionA1) => EvaluateTarget(book, sheet, expressionA1);
 
     /// <summary>The dynamic-array spill range of an anchor cell (Excel 365), else null.</summary>
     public static CellRect? SpillRange(string book, string sheet, CellRect anchor)
@@ -429,7 +489,7 @@ internal sealed class ExcelHost
     };
 
     /// <summary>Value2 returns cell errors as Int32 (0x800A07xx); the low word is Excel's xlErr code.</summary>
-    private static string ErrorText(int code) => (code & 0xFFFF) switch
+    internal static string ErrorText(int code) => (code & 0xFFFF) switch
     {
         2000 => "#NULL!",
         2007 => "#DIV/0!",

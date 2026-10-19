@@ -17,6 +17,7 @@ public sealed class Ribbon : ExcelRibbon
         <group id='ftTrace' label='Trace'>
           <button id='ftPrec' label='Precedents' size='large' imageMso='TracePrecedents' onAction='OnPrecedents' screentip='Trace precedents (Ctrl+Q)'/>
           <button id='ftDep' label='Dependents' size='large' imageMso='TraceDependents' onAction='OnDependents' screentip='Trace dependents (Ctrl+Shift+Q)'/>
+          <button id='ftError' label='Trace error' size='large' imageMso='TraceError' onAction='OnError' screentip='Find the cell(s) where the error in the active cell starts (E in the trace window)'/>
           <button id='ftBack' label='Jump back' imageMso='GoLeftToRight' onAction='OnBack' screentip='Return to where you jumped from (Ctrl+Backspace)'/>
         </group>
         <group id='ftOptions' label='Options'>
@@ -35,6 +36,7 @@ public sealed class Ribbon : ExcelRibbon
 
     public void OnPrecedents(IRibbonControl control) => Commands.TracePrecedents();
     public void OnDependents(IRibbonControl control) => Commands.TraceDependents();
+    public void OnError(IRibbonControl control) => Commands.TraceError();
     public void OnBack(IRibbonControl control) => Commands.JumpBack();
     public void OnRebuild(IRibbonControl control) => Commands.RebuildIndex();
 

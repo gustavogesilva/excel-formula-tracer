@@ -159,7 +159,7 @@ internal sealed class TraceWindow : Form
         var parts = new List<string> { $"{_level.Mode} · {_level.Items.Count} item{(_level.Items.Count == 1 ? "" : "s")}" };
         if (Settings.Current.ShowTimings && _level.Millis > 0) parts.Add($"{_level.Millis:F1} ms");
         if (!string.IsNullOrEmpty(_level.Note)) parts.Add(_level.Note);
-        parts.Add("↑↓ go · → drill · ← back · Tab in/out · Enter jump · Esc return");
+        parts.Add("↑↓ go · → drill · ← back · Tab in/out · E error root · Enter jump · Esc return");
         _status.Text = string.Join("   ", parts);
     }
 
@@ -205,6 +205,7 @@ internal sealed class TraceWindow : Form
             TraceItemKind.Dynamic when !item.HasTarget => item.Label + "  (→ to evaluate)",
             _ => item.IsAddressOnly ? item.Label + "  (address only)" : item.Label,
         };
+        if (item.Detail != null) label += "  — " + item.Detail;
         var row = new ListViewItem(new[] { label, value, formula });
         if (item.SpanStart >= 0 && _spanColors.TryGetValue(item.SpanStart, out var color)) row.ForeColor = color;
         else if (!item.HasTarget) row.ForeColor = SystemColors.GrayText;
@@ -275,6 +276,9 @@ internal sealed class TraceWindow : Form
                 case Keys.Control | Keys.OemCloseBrackets:
                     DrillSelected(TraceMode.Dependents);
                     return true;
+                case Keys.E:
+                    TraceError();
+                    return true;
                 case Keys.Control | Keys.C:
                     if (Selected is { } s) Clipboard.SetText(s.Label);
                     return true;
@@ -302,6 +306,21 @@ internal sealed class TraceWindow : Form
             if (next == null && reason != null) SetStatus(reason);
             return next;
         }, item);
+    }
+
+    /// <summary>E: root of the error in the selected row if it shows one, else in the traced cell.</summary>
+    private void TraceError()
+    {
+        string book = _level.Book, sheet = _level.Sheet;
+        var cell = _level.Focus;
+        if (Selected is { HasTarget: true } item && _list.SelectedIndices.Count > 0
+            && TraceController.IsErrorText(Row(_list.SelectedIndices[0]).SubItems[1].Text))
+        {
+            book = item.Book;
+            sheet = item.Sheet;
+            cell = item.Rect;
+        }
+        Navigate(() => _controller.ErrorRoots(book, sheet, cell), null);
     }
 
     private void Navigate(Func<Level?> build, TraceItem? from)

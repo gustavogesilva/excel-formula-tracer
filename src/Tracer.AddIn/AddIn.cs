@@ -52,6 +52,9 @@ public static class Commands
     [ExcelCommand(Name = "FT_TraceDependents")]
     public static void TraceDependents() => Run(() => TraceController.Instance.TraceActive(TraceMode.Dependents));
 
+    [ExcelCommand(Name = "FT_TraceError")]
+    public static void TraceError() => Run(() => TraceController.Instance.TraceActive(TraceMode.Errors));
+
     [ExcelCommand(Name = "FT_JumpBack")]
     public static void JumpBack() => Run(() => TraceController.Instance.JumpBack());
 
