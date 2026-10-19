@@ -39,6 +39,9 @@ internal sealed class TraceWindow : Form
     private Dictionary<int, Color> _spanColors = new();
     private SavedPosition? _origin;
     private bool _suppressNavigation;
+    /// <summary>The formula box is open for editing (F2): keys go to it, except Enter / Esc / Alt+Enter.</summary>
+    private bool _editing;
+    private static readonly Color EditBackColor = Color.FromArgb(255, 251, 230);
 
     public TraceWindow(TraceController controller)
     {
@@ -85,6 +88,11 @@ internal sealed class TraceWindow : Form
             Font = new Font("Consolas", 10f),
             BackColor = SystemColors.Window,
             TabStop = false,
+        };
+        // MouseDown with Clicks == 2 is raised reliably for rich edit controls, unlike DoubleClick.
+        _formula.MouseDown += (_, e) =>
+        {
+            if (e.Clicks == 2 && !_editing) Guard(BeginEdit);
         };
         _title = new Label { Dock = DockStyle.Top, Height = 22, Font = new Font(Font, FontStyle.Bold), AutoEllipsis = true, Padding = new Padding(4, 4, 4, 0) };
         var header = new Panel { Dock = DockStyle.Top, Height = 74, Padding = new Padding(4, 0, 4, 4) };
@@ -169,7 +177,7 @@ internal sealed class TraceWindow : Form
         var parts = new List<string> { $"{_level.Mode} · {_level.Items.Count} item{(_level.Items.Count == 1 ? "" : "s")}" };
         if (Settings.Current.ShowTimings && _level.Millis > 0) parts.Add($"{_level.Millis:F1} ms");
         if (!string.IsNullOrEmpty(_level.Note)) parts.Add(_level.Note);
-        parts.Add("↑↓ go · → into · ← up/back · Tab in/out · E error root · Enter jump · Esc return");
+        parts.Add("↑↓ go · → into · ← up/back · Tab in/out · E error root · F2 edit · Enter jump · Esc return");
         _status.Text = string.Join("   ", parts);
     }
 
@@ -273,6 +281,8 @@ internal sealed class TraceWindow : Form
 
     private void OnSelectionChanged()
     {
+        // Clicking the list while editing abandons the edit (the formula box is about to be re-rendered).
+        if (_editing) CancelEdit();
         int row = SelectedRow;
         var item = row >= 0 ? ItemAt(row) : null;
         if (item == null) return;
@@ -303,6 +313,21 @@ internal sealed class TraceWindow : Form
 
     private bool HandleKey(Keys key)
     {
+        if (_editing)
+        {
+            // Everything else (arrows, typing, Ctrl+Z/C/V inside the box) belongs to the text box.
+            Action? edit = key switch
+            {
+                Keys.Enter => ApplyEdit,
+                Keys.Escape => CancelEdit,
+                Keys.Alt | Keys.Enter => () => _formula.SelectedText = "\n",
+                _ => null,
+            };
+            if (edit == null) return false;
+            Guard(edit);
+            return true;
+        }
+
         // The user's tracing shortcuts (Tracer › Shortcuts…) work inside the window too and take priority.
         Action? action = Settings.Current.Shortcuts.Find((int)key) switch
         {
@@ -323,6 +348,8 @@ internal sealed class TraceWindow : Form
                 Keys.Back => GoBack,
                 Keys.Tab or (Keys.Shift | Keys.Tab) => () => Navigate(() => _controller.Toggle(_level), null),
                 Keys.E => TraceError,
+                Keys.F2 => BeginEdit,
+                Keys.Control | Keys.Z => UndoEdit,
                 Keys.Control | Keys.C => () =>
                 {
                     if (Selected is { } s) Clipboard.SetText(s.Label);
@@ -389,6 +416,99 @@ internal sealed class TraceWindow : Form
         Navigate(() => _controller.ErrorRoots(book, sheet, cell), null);
     }
 
+    // ---- editing ----------------------------------------------------------------------------
+
+    /// <summary>F2 / double-click on the formula: edit the traced cell's formula in place.</summary>
+    private void BeginEdit()
+    {
+        if (_editing) return;
+        if (!_level.Editable || !_level.Focus.IsSingleCell)
+        {
+            SetStatus("Only the traced cell's formula can be edited here. Press → into a cell first, then F2.");
+            return;
+        }
+        string text = _controller.ReadEditText(_level);
+        _editing = true;
+        _formula.ReadOnly = false;
+        _formula.TabStop = true;
+        _formula.BackColor = EditBackColor;
+        _formula.Text = text;
+        _formula.SelectAll();
+        _formula.SelectionColor = SystemColors.WindowText;
+        _formula.SelectionBackColor = EditBackColor;
+        _formula.Select(text.Length, 0);
+        _formula.Focus();
+        SetStatus($"Editing {_level.Root.Label}: Enter applies · Esc cancels · Alt+Enter new line. "
+                  + "Note: like any add-in edit, this clears Excel's own undo history; Ctrl+Z in this window undoes it.");
+    }
+
+    private void EndEdit()
+    {
+        _editing = false;
+        _formula.ReadOnly = true;
+        _formula.TabStop = false;
+        _formula.BackColor = SystemColors.Window;
+        _list.Focus();
+    }
+
+    private void CancelEdit()
+    {
+        EndEdit();
+        RenderFormula(SelectedRow > 0 && Selected is { } item ? item.SpanStart : -1);
+        UpdateStatus();
+    }
+
+    /// <summary>Enter: write the formula (Excel recalculates as if typed), then re-trace the same cell in place.</summary>
+    private void ApplyEdit()
+    {
+        var sw = Stopwatch.StartNew();
+        string label = _level.Root.Label;
+        Level? next;
+        try
+        {
+            next = _controller.ApplyEdit(_level, _formula.Text);
+        }
+        catch (COMException)
+        {
+            // Stay in the editor so the text can be fixed.
+            SetStatus("Excel rejected that formula. Check the syntax: this box uses English function names and commas, as shown.");
+            return;
+        }
+        EndEdit();
+        if (next == null)
+        {
+            CancelEdit();
+            return;
+        }
+        next.Millis = sw.Elapsed.TotalMilliseconds;
+        Display(next);
+        SetStatus($"Updated {label} in {next.Millis:F1} ms (including Excel's recalculation) · Ctrl+Z undoes");
+    }
+
+    /// <summary>Ctrl+Z (not editing): restore the cell changed by the last edit made in this window.</summary>
+    private void UndoEdit()
+    {
+        var edit = _controller.UndoLastEdit();
+        if (edit == null)
+        {
+            SetStatus("Nothing to undo: no formula has been edited in this window.");
+            return;
+        }
+        AfterExternalUndo(edit.Value);
+    }
+
+    /// <summary>After an undo (here or via Excel's Ctrl+Z): refresh if this trace shows the restored cell.</summary>
+    public void AfterExternalUndo(FormulaEdit edit)
+    {
+        if (_editing) EndEdit();
+        bool showsCell = string.Equals(_level.Book, edit.Book, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(_level.Sheet, edit.Sheet, StringComparison.OrdinalIgnoreCase)
+            && _level.Focus.IsSingleCell && _level.Focus.Row1 == edit.Row && _level.Focus.Col1 == edit.Col;
+        if (showsCell && _controller.Rebuild(_level) is { } next) Display(next);
+        SetStatus("Restored the previous content of " + Tracer.Core.Text.A1.Qualified(edit.Book, edit.Sheet,
+            Tracer.Core.Model.CellRect.Cell(edit.Row, edit.Col), _level.Book, null));
+    }
+
     private void Navigate(Func<Level?> build, TraceItem? from)
     {
         var sw = Stopwatch.StartNew();
@@ -434,6 +554,7 @@ internal sealed class TraceWindow : Form
 
     private void CloseWindow(bool restore)
     {
+        if (_editing) EndEdit();
         Settings.Current.WindowBounds = Bounds;
         Settings.Current.Save();
         Hide();

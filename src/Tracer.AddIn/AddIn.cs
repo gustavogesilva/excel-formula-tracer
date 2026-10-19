@@ -69,6 +69,10 @@ public static class Commands
     [ExcelCommand(Name = "FT_TraceError")]
     public static void TraceError() => Run(() => TraceController.Instance.TraceActive(TraceMode.Errors));
 
+    /// <summary>Target of Excel's Ctrl+Z after an edit made in the trace window (registered with OnUndo).</summary>
+    [ExcelCommand(Name = "FT_UndoEdit")]
+    public static void UndoEdit() => Run(() => TraceController.Instance.UndoFromExcel());
+
     [ExcelCommand(Name = "FT_JumpBack")]
     public static void JumpBack() => Run(() => TraceController.Instance.JumpBack());
 

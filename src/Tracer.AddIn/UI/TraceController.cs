@@ -34,6 +34,8 @@ internal sealed class Level
     public double Millis;
     /// <summary>Display values already read in bulk (range listings), keyed by item.</summary>
     public Dictionary<TraceItem, string>? Values;
+    /// <summary>The focus is one cell whose formula the window may edit (F2).</summary>
+    public bool Editable;
 
     private TraceItem? _root;
 
@@ -158,6 +160,7 @@ internal sealed class TraceController
             Focus = focus,
             FocusValue = value,
             Title = "Precedents of " + Address(book, sheet, focus),
+            Editable = true,
         };
 
         string? formula = _host.ReadFormula(range);
@@ -194,6 +197,7 @@ internal sealed class TraceController
             FocusValue = value,
             Formula = formula,
             Items = result.Roots,
+            Editable = true,
             Title = result.Error == null
                 ? "No error in " + Address(book, sheet, focus)
                 : $"Root of {result.Error} in {Address(book, sheet, focus)}",
@@ -228,6 +232,7 @@ internal sealed class TraceController
             Formula = formula,
             Items = result.Items,
             Title = "Dependents of " + Address(book, sheet, rect),
+            Editable = rect.IsSingleCell,
         };
         var notes = new List<string>();
         if (result.Items.Count == 0) notes.Add("no formula in the open workbooks refers to this");
@@ -235,6 +240,62 @@ internal sealed class TraceController
         if (result.DynamicFormulaCells > 0) notes.Add($"{result.DynamicFormulaCells:N0} formula cells use OFFSET/INDIRECT and may depend on this without being listed");
         level.Note = string.Join(" · ", notes);
         return level;
+    }
+
+    // ---- editing --------------------------------------------------------------------------
+
+    private readonly EditHistory _edits = new();
+
+    public string ReadEditText(Level level) => _host.ReadEditText(level.Book, level.Sheet, level.Focus);
+
+    /// <summary>
+    /// Writes <paramref name="text"/> into the level's cell (Excel recalculates as if it were typed), records the
+    /// previous content for undo, and re-traces the same cell. Excel clears its own undo history on any add-in write,
+    /// so <see cref="UndoLastEdit"/> is the way back; Excel's Ctrl+Z is pointed at it too when Excel allows that.
+    /// </summary>
+    public Level? ApplyEdit(Level level, string text)
+    {
+        string previous = ReadEditText(level);
+        if (previous == text) return Rebuild(level);
+        _host.WriteFormula(level.Book, level.Sheet, level.Focus, text);
+        _edits.Push(new FormulaEdit(level.Book, level.Sheet, level.Focus.Row1, level.Focus.Col1, previous));
+        try
+        {
+            ExcelHost.App.OnUndo("Undo Formula Tracer edit", "FT_UndoEdit");
+        }
+        catch (Exception)
+        {
+            // Not available outside a macro context on some builds; the window's Ctrl+Z still works.
+        }
+        return Rebuild(level);
+    }
+
+    /// <summary>Restores the cell changed by the most recent edit. Returns that edit, or null when there is none.</summary>
+    public FormulaEdit? UndoLastEdit()
+    {
+        if (!_edits.TryPop(out var edit)) return null;
+        _host.WriteFormula(edit.Book, edit.Sheet, CellRect.Cell(edit.Row, edit.Col), edit.Previous);
+        return edit;
+    }
+
+    /// <summary>Excel's Ctrl+Z (via OnUndo) or the ribbon: undo, and refresh the window if it shows that cell.</summary>
+    public void UndoFromExcel()
+    {
+        var edit = UndoLastEdit();
+        if (edit != null && _window != null && _window.Visible) _window.AfterExternalUndo(edit.Value);
+    }
+
+    /// <summary>The same trace again for the same focus (after its cell changed), keeping the selected row.</summary>
+    public Level? Rebuild(Level level)
+    {
+        var next = level.Mode switch
+        {
+            TraceMode.Dependents => Dependents(level.Book, level.Sheet, level.Focus),
+            TraceMode.Errors => ErrorRoots(level.Book, level.Sheet, level.Focus),
+            _ => Precedents(level.Book, level.Sheet, level.Focus),
+        };
+        if (next != null) next.Selected = level.Selected;
+        return next;
     }
 
     /// <summary>What → / double-click opens for an item, or null with a reason.</summary>

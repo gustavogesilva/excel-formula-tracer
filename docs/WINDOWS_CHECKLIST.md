@@ -77,6 +77,25 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
       the target is off-screen)**.
 - [ ] The window stays above Excel when navigating into another workbook window (SDI).
 
+## Editing formulas in the window
+
+- [ ] F2 on a precedents trace opens the editor on the top-row cell's formula (tinted box). Double-clicking the formula
+      does the same.
+- [ ] While editing, arrows move the caret (not the list), and the tracing shortcuts don't fire.
+- [ ] Change `B4` to `B5` and press Enter. Expect:
+  - [ ] the cell updates in Excel;
+  - [ ] the list now shows B5 and the value refreshes;
+  - [ ] the status line shows "Updated … in N ms".
+- [ ] Esc cancels the edit (the window stays open); a second Esc closes the window.
+- [ ] Alt+Enter inserts a line break that survives Apply.
+- [ ] `=SUM(` gives "Excel rejected that formula" and the editor keeps your text.
+- [ ] A locked cell on a protected sheet gives an error, not a crash.
+- [ ] Ctrl+Z in the window restores the previous formula and the trace refreshes. Ctrl+Z with nothing to undo says so.
+- [ ] **(assumption: OnUndo works from the window)** After an edit, Excel's Ctrl+Z (Edit › Undo shows "Undo Formula
+      Tracer edit") restores it. If Excel shows nothing to undo, only the window's Ctrl+Z works; note it here.
+- [ ] F2 on a range listing or name listing explains that you should press → into a cell first.
+- [ ] Record the apply time on a large model (it includes Excel's recalculation).
+
 ## Precedents coverage
 
 - [ ] Same-sheet, cross-sheet and cross-workbook references, ranges, whole columns (`SUM(B:B)`) and whole rows.

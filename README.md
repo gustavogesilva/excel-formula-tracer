@@ -48,6 +48,8 @@ installer avoids this because it writes the file itself.
 | Window | Tab | Switch between precedents and dependents of the same cell |
 | Window | Ctrl+Q / Ctrl+Shift+Q | Precedents / dependents of the selected row |
 | Window | E | Trace the error (`#REF!`, `#N/A`, …) in the selected row, or in the traced cell, back to its root cell(s) |
+| Window | F2 / double-click the formula | Edit the traced cell's formula in place. Enter applies (Excel recalculates as if typed and the trace refreshes), Esc cancels, Alt+Enter adds a line break |
+| Window | Ctrl+Z | Undo the last formula edit made in the window (up to 50) |
 | Window | Enter | Jump to the selected row and close |
 | Window | Esc | Return to where you started and close |
 | Window | Ctrl+C | Copy the selected address |
@@ -73,6 +75,20 @@ references (`Jan:Dec!A1`); whole rows/columns; defined names (workbook- and shee
 LAMBDA names called like functions); structured references (`Table1[Col]`, `[@Col]`, `[#Headers]`, …);
 spill references (`A1#`); LET/LAMBDA locals (never mistaken for names); OFFSET/INDIRECT (evaluated on demand
 for precedents); references to deleted sheets (`#REF!A1`, shown as broken rather than as a same-sheet cell).
+
+### Editing formulas in the window
+
+Press **F2** (or double-click the formula) to edit the traced cell's formula: the one in the bold top row. To edit an
+argument, press → into it first.
+
+The text uses English function names and commas, exactly as shown. **Enter** writes the formula, Excel recalculates
+as if you had typed it, and the trace refreshes in place. The status line shows how long that took.
+
+Browsing is unaffected: the editor costs nothing until it is opened.
+
+As with any add-in or macro that writes a cell, Excel then clears its own undo history. **Ctrl+Z in the trace
+window** restores the previous formula (up to 50 edits). Excel's Ctrl+Z is also pointed at that undo when Excel
+allows it.
 
 ### Tracing an error to its root
 

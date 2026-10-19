@@ -180,6 +180,40 @@ internal sealed class ExcelHost : ICellReader
         return cell.Formula as string;
     }
 
+    /// <summary>What the cell holds as A1 text (its formula, or its constant), for editing in the trace window.</summary>
+    public string ReadEditText(string book, string sheet, CellRect cell)
+    {
+        var r = GetRange(book, sheet, cell) ?? throw new InvalidOperationException("The cell is no longer available.");
+        return ReadFormulaA1(r) ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Writes a formula (en-US A1 syntax, as the window shows it) or a constant, exactly as if typed into the cell:
+    /// <c>Formula2</c> when available (no implicit-intersection rewriting), else <c>Formula</c>.
+    /// Throws <see cref="COMException"/> when Excel rejects the text.
+    /// </summary>
+    public void WriteFormula(string book, string sheet, CellRect cell, string text)
+    {
+        var r = GetRange(book, sheet, cell) ?? throw new InvalidOperationException("The cell is no longer available.");
+        if (_hasFormula2 != false)
+        {
+            try
+            {
+                r.GetType().InvokeMember("Formula2", BindingFlags.SetProperty, null, r, new object[] { text });
+                _hasFormula2 = true;
+                return;
+            }
+            catch (Exception ex) when (ex is TargetInvocationException || ex is COMException || ex is MissingMethodException)
+            {
+                var com = (ex as TargetInvocationException)?.InnerException as COMException ?? ex as COMException;
+                const int DispUnknownName = unchecked((int)0x80020006);
+                if (ex is MissingMethodException || com?.HResult == DispUnknownName) _hasFormula2 = false; // Excel without Formula2
+                else throw com ?? ex;
+            }
+        }
+        r.Formula = text;
+    }
+
     /// <summary>The cell's R1C1 formula, or null when it holds a constant or nothing.</summary>
     public string? ReadFormula(XlRange cell) =>
         ReadFormulasR1C1(cell) is string s && s.Length > 1 && s[0] == '=' ? s : null;

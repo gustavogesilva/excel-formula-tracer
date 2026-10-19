@@ -18,5 +18,6 @@
     <!-- Keyboard rules of the trace window (pure, from the add-in). -->
     <Compile Include="..\..\src\Tracer.AddIn\UI\ListNavigation.cs" Link="AddIn\ListNavigation.cs" />
     <Compile Include="..\..\src\Tracer.AddIn\Shortcut.cs" Link="AddIn\Shortcut.cs" />
+    <Compile Include="..\..\src\Tracer.AddIn\UI\EditHistory.cs" Link="AddIn\EditHistory.cs" />
   </ItemGroup>
 </Project>
