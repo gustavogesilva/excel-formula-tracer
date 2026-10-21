@@ -20,5 +20,6 @@
     <Compile Include="..\..\src\Tracer.AddIn\Shortcut.cs" Link="AddIn\Shortcut.cs" />
     <Compile Include="..\..\src\Tracer.AddIn\UI\EditHistory.cs" Link="AddIn\EditHistory.cs" />
     <Compile Include="..\..\src\Tracer.AddIn\UI\CrosshairGeometry.cs" Link="AddIn\CrosshairGeometry.cs" />
+    <Compile Include="..\..\src\Tracer.AddIn\Excel\ChunkedReads.cs" Link="AddIn\ChunkedReads.cs" />
   </ItemGroup>
 </Project>

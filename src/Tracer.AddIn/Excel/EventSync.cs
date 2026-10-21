@@ -17,6 +17,8 @@ internal static class EventSync
     // Keep the Application RCW alive, or the COM event sinks are collected and events silently stop.
     private static Application? _app;
     private static bool _prebuildQueued;
+    /// <summary>A prebuild step found Excel calculating; resume when the calculation finishes.</summary>
+    private static bool _resumeAfterCalculate;
 
     public static void Attach()
     {
@@ -26,6 +28,7 @@ internal static class EventSync
         _app.WorkbookActivate += OnWorkbookActivate;
         _app.WorkbookNewSheet += OnWorkbookNewSheet;
         _app.WorkbookAfterSave += OnWorkbookAfterSave;
+        _app.AfterCalculate += OnAfterCalculate;
     }
 
     public static void Detach()
@@ -36,6 +39,7 @@ internal static class EventSync
         _app.WorkbookActivate -= OnWorkbookActivate;
         _app.WorkbookNewSheet -= OnWorkbookNewSheet;
         _app.WorkbookAfterSave -= OnWorkbookAfterSave;
+        _app.AfterCalculate -= OnAfterCalculate;
         _app = null;
     }
 
@@ -81,6 +85,13 @@ internal static class EventSync
 
     private static void OnWorkbookAfterSave(Workbook wb, bool success) => SchedulePrebuild();
 
+    private static void OnAfterCalculate()
+    {
+        if (!_resumeAfterCalculate) return;
+        _resumeAfterCalculate = false;
+        SchedulePrebuild();
+    }
+
     /// <summary>Indexes pending sheets one per idle callback so Excel stays responsive between sheets.</summary>
     public static void SchedulePrebuild()
     {
@@ -103,6 +114,13 @@ internal static class EventSync
             _prebuildQueued = false;
             try
             {
+                // Data tables recalculate asynchronously, possibly for minutes. Reading sheets meanwhile could keep
+                // interrupting that recalculation, so wait for it to finish.
+                if (ExcelHost.IsCalculating())
+                {
+                    _resumeAfterCalculate = true;
+                    return;
+                }
                 if (ExcelHost.Instance.IndexNextPendingSheet()) SchedulePrebuild();
             }
             catch (Exception)

@@ -21,8 +21,6 @@ namespace Tracer.AddIn.Excel;
 /// </summary>
 internal sealed class ExcelHost : ICellReader
 {
-    /// <summary>Cells per bulk read; bounds memory when UsedRange is bloated (e.g. formatting down to row 1M).</summary>
-    private const int ChunkCells = 65_536;
     private static readonly TimeSpan SnapshotMaxAge = TimeSpan.FromSeconds(30);
 
     private sealed class Snapshot
@@ -36,12 +34,21 @@ internal sealed class ExcelHost : ICellReader
     private readonly Dictionary<string, Snapshot> _snapshots = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _structureDirty = new(StringComparer.OrdinalIgnoreCase);
     private bool? _hasFormula2;
+    /// <summary>Every bulk read goes through this, so none asks Excel for too much memory at once.</summary>
+    private readonly ChunkedReads _reads = new();
 
     public static ExcelHost Instance { get; } = new();
 
     public TraceEngine Engine { get; } = new();
 
     public static Application App => (Application)ExcelDnaUtil.Application;
+
+    /// <summary>
+    /// Excel is in the middle of a recalculation. Data tables recalculate asynchronously, possibly for minutes;
+    /// background work (idle indexing, the highlight) waits for it rather than interrupting it. Manual mode's
+    /// "pending" doesn't count: nothing is running.
+    /// </summary>
+    public static bool IsCalculating() => App.CalculationState == XlCalculationState.xlCalculating;
 
     // ---- workbook structure ---------------------------------------------------------------
 
@@ -157,12 +164,21 @@ internal sealed class ExcelHost : ICellReader
                 _hasFormula2 = true;
                 return v;
             }
-            catch (Exception ex) when (_hasFormula2 == null && (ex is TargetInvocationException || ex is COMException || ex is MissingMethodException))
+            catch (Exception ex) when (_hasFormula2 == null && IsUnknownMember(ex))
             {
                 _hasFormula2 = false;
             }
         }
         return r.FormulaR1C1;
+    }
+
+    /// <summary>The member doesn't exist in this Excel (e.g. Formula2 before dynamic arrays). Anything else, such as
+    /// out-of-memory or Excel being busy, is a real failure of the call.</summary>
+    private static bool IsUnknownMember(Exception ex)
+    {
+        const int DispUnknownName = unchecked((int)0x80020006);
+        var com = (ex as TargetInvocationException)?.InnerException as COMException ?? ex as COMException;
+        return ex is MissingMethodException || com?.HResult == DispUnknownName;
     }
 
     /// <summary>A1 formula for display, <c>Formula2</c> when available so no implicit-intersection <c>@</c> is added.</summary>
@@ -206,10 +222,8 @@ internal sealed class ExcelHost : ICellReader
             }
             catch (Exception ex) when (ex is TargetInvocationException || ex is COMException || ex is MissingMethodException)
             {
-                var com = (ex as TargetInvocationException)?.InnerException as COMException ?? ex as COMException;
-                const int DispUnknownName = unchecked((int)0x80020006);
-                if (ex is MissingMethodException || com?.HResult == DispUnknownName) _hasFormula2 = false; // Excel without Formula2
-                else throw com ?? ex;
+                if (IsUnknownMember(ex)) _hasFormula2 = false; // Excel without Formula2
+                else throw (ex as TargetInvocationException)?.InnerException as COMException ?? ex;
             }
         }
         r.Formula = text;
@@ -227,11 +241,9 @@ internal sealed class ExcelHost : ICellReader
         XlRange used = ws.UsedRange;
         int r0 = used.Row, c0 = used.Column;
         int nr = used.Rows.Count, nc = used.Columns.Count;
-        int chunk = Math.Max(1, ChunkCells / nc);
 
-        for (int off = 0; off < nr; off += chunk)
+        _reads.Walk(nr, nc, (off, rows) =>
         {
-            int rows = Math.Min(chunk, nr - off);
             XlRange part = rows == nr ? used : ws.Range[ws.Cells[r0 + off, c0], ws.Cells[r0 + off + rows - 1, c0 + nc - 1]];
             var v = ReadFormulasR1C1(part);
             if (v is object[,] arr)
@@ -251,7 +263,8 @@ internal sealed class ExcelHost : ICellReader
                 writer.Add(r0 + off, c0, s1);
                 count++;
             }
-        }
+            return true;
+        });
         writer.Commit();
         return count;
     }
@@ -436,6 +449,28 @@ internal sealed class ExcelHost : ICellReader
         [DllImport("user32.dll")]
         public static extern bool IsIconic(IntPtr hWnd);
 
+        [DllImport("user32.dll")]
+        private static extern uint GetDpiForWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern int GetSystemMetricsForDpi(int index, uint dpi);
+
+        private const int SM_CXVSCROLL = 2, SM_CYHSCROLL = 3;
+
+        /// <summary>A scroll bar's thickness at the grid window's own DPI (it differs per monitor); system DPI before Windows 10 1607.</summary>
+        private static int ScrollBarSize(IntPtr grid, int metric, int systemDpiValue)
+        {
+            try
+            {
+                uint dpi = GetDpiForWindow(grid);
+                if (dpi > 0) return GetSystemMetricsForDpi(metric, dpi);
+            }
+            catch (EntryPointNotFoundException)
+            {
+            }
+            return systemDpiValue;
+        }
+
         /// <summary>
         /// The grid window's client area on screen, less the scroll bars and sheet-tab strip at its right and bottom,
         /// so the highlight never covers them or spills outside the window. Falls back to the main window's client area.
@@ -448,8 +483,10 @@ internal sealed class ExcelHost : ICellReader
             if (!GetClientRect(hwnd, out var rc)) return default;
             var origin = new POINT();
             if (!ClientToScreen(hwnd, ref origin)) return default;
-            int right = origin.X + rc.Right - (grid != IntPtr.Zero && verticalBar ? System.Windows.Forms.SystemInformation.VerticalScrollBarWidth : 0);
-            int bottom = origin.Y + rc.Bottom - (grid != IntPtr.Zero && bottomStrip ? System.Windows.Forms.SystemInformation.HorizontalScrollBarHeight : 0);
+            int right = origin.X + rc.Right - (grid != IntPtr.Zero && verticalBar
+                ? ScrollBarSize(grid, SM_CXVSCROLL, System.Windows.Forms.SystemInformation.VerticalScrollBarWidth) : 0);
+            int bottom = origin.Y + rc.Bottom - (grid != IntPtr.Zero && bottomStrip
+                ? ScrollBarSize(grid, SM_CYHSCROLL, System.Windows.Forms.SystemInformation.HorizontalScrollBarHeight) : 0);
             return new PixelRect(origin.X, origin.Y, right, bottom);
         }
     }
@@ -507,23 +544,28 @@ internal sealed class ExcelHost : ICellReader
         if (r == null) return found;
         try
         {
-            var ur = RectOf(r.Worksheet.UsedRange);
+            var ws = r.Worksheet;
+            var ur = RectOf(ws.UsedRange);
             if (!ur.Intersects(rect)) return found;
             var clip = ur.Intersect(rect);
-            if (!clip.Equals(rect)) r = r.Worksheet.Range[A1.Address(clip, absolute: false)];
-            switch (r.Value2)
+            _reads.Walk(clip.Rows, clip.Cols, (off, rows) =>
             {
-                case object[,] values:
-                    int lr = values.GetLowerBound(0), lc = values.GetLowerBound(1);
-                    for (int i = lr; i <= values.GetUpperBound(0) && found.Count < max; i++)
-                        for (int j = lc; j <= values.GetUpperBound(1) && found.Count < max; j++)
-                            if (values[i, j] is int code && ErrorText(code) == error)
-                                found.Add((clip.Row1 + i - lr, clip.Col1 + j - lc));
-                    break;
-                case int single when ErrorText(single) == error:
-                    found.Add((clip.Row1, clip.Col1));
-                    break;
-            }
+                var part = new CellRect(clip.Row1 + off, clip.Col1, clip.Row1 + off + rows - 1, clip.Col2);
+                switch (ws.Range[A1.Address(part, absolute: false)].Value2)
+                {
+                    case object[,] values:
+                        int lr = values.GetLowerBound(0), lc = values.GetLowerBound(1);
+                        for (int i = lr; i <= values.GetUpperBound(0) && found.Count < max; i++)
+                            for (int j = lc; j <= values.GetUpperBound(1) && found.Count < max; j++)
+                                if (values[i, j] is int code && ErrorText(code) == error)
+                                    found.Add((part.Row1 + i - lr, part.Col1 + j - lc));
+                        break;
+                    case int single when ErrorText(single) == error:
+                        found.Add((part.Row1, part.Col1));
+                        break;
+                }
+                return found.Count < max;
+            });
         }
         catch (COMException)
         {
@@ -566,48 +608,58 @@ internal sealed class ExcelHost : ICellReader
         }
     }
 
-    /// <summary>Non-empty cells of a range with value and formula, from two bulk reads (capped).</summary>
+    /// <summary>Non-empty cells of a range with value and formula, from bulk reads in chunks (capped at <paramref name="max"/>).</summary>
     public List<(CellRect Cell, string Value, string? FormulaR1C1)> ReadRangeCells(string book, string sheet, CellRect rect, int max, out bool truncated)
     {
         truncated = false;
+        bool more = false;
         var list = new List<(CellRect, string, string?)>();
         // Whole columns/rows: clip to the used range first.
         var r = GetRange(book, sheet, rect);
         if (r == null) return list;
         try
         {
-            XlRange used = r.Worksheet.UsedRange;
-            var ur = RectOf(used);
+            var ws = r.Worksheet;
+            var ur = RectOf(ws.UsedRange);
             if (!ur.Intersects(rect)) return list;
             var clip = ur.Intersect(rect);
-            if (!clip.Equals(rect)) r = r.Worksheet.Range[A1.Address(clip, absolute: false)];
 
-            object? values = r.Value2;
-            object? formulas = ReadFormulasR1C1(r);
-            if (values is object[,] va && formulas is object[,] fa)
+            _reads.Walk(clip.Rows, clip.Cols, (off, rows) =>
             {
-                int lr = va.GetLowerBound(0), lc = va.GetLowerBound(1);
-                for (int i = lr; i <= va.GetUpperBound(0); i++)
-                    for (int j = lc; j <= va.GetUpperBound(1); j++)
-                    {
-                        object? v = va[i, j];
-                        string? f = fa[i, j] as string;
-                        bool hasFormula = f != null && f.Length > 1 && f[0] == '=';
-                        if (v == null && !hasFormula) continue;
-                        if (list.Count >= max) { truncated = true; return list; }
-                        list.Add((CellRect.Cell(clip.Row1 + i - lr, clip.Col1 + j - lc), FormatValue(v), hasFormula ? f : null));
-                    }
-            }
-            else
-            {
-                string? f = formulas as string;
-                list.Add((clip, FormatValue(values), f != null && f.StartsWith("=") ? f : null));
-            }
+                var part = new CellRect(clip.Row1 + off, clip.Col1, clip.Row1 + off + rows - 1, clip.Col2);
+                XlRange pr = ws.Range[A1.Address(part, absolute: false)];
+                object? values = pr.Value2;
+                object? formulas = ReadFormulasR1C1(pr);
+                if (values is object[,] va && formulas is object[,] fa)
+                {
+                    int lr = va.GetLowerBound(0), lc = va.GetLowerBound(1);
+                    for (int i = lr; i <= va.GetUpperBound(0); i++)
+                        for (int j = lc; j <= va.GetUpperBound(1); j++)
+                            if (!Add(CellRect.Cell(part.Row1 + i - lr, part.Col1 + j - lc), va[i, j], fa[i, j] as string)) return false;
+                    return true;
+                }
+                return Add(part, values, formulas as string);
+            });
         }
         catch (COMException)
         {
         }
+        truncated = more;
         return list;
+
+        // False once the cap is reached and another non-empty cell remains.
+        bool Add(CellRect cell, object? value, string? f)
+        {
+            bool hasFormula = f != null && f.Length > 1 && f[0] == '=';
+            if (value == null && !hasFormula) return true;
+            if (list.Count >= max)
+            {
+                more = true;
+                return false;
+            }
+            list.Add((cell, FormatValue(value), hasFormula ? f : null));
+            return true;
+        }
     }
 
     public static string FormatValue(object? v) => v switch

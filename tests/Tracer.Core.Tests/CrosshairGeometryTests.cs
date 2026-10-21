@@ -85,6 +85,50 @@ public class CrosshairGeometryTests
     }
 
     [Fact]
+    public void IdleTicksNeverCallExcel()
+    {
+        var gate = new FollowGate();
+        gate.Reset(100, Grid);
+        for (int i = 0; i < 50; i++) Assert.False(gate.Tick(100, Grid));
+    }
+
+    [Fact]
+    public void InputGivesTwoReReadsThenStops()
+    {
+        var gate = new FollowGate();
+        gate.Reset(100, Grid);
+        Assert.True(gate.Tick(160, Grid));
+        Assert.True(gate.Tick(160, Grid));
+        Assert.False(gate.Tick(160, Grid));
+        // Continuous input (scrolling) keeps it following.
+        Assert.True(gate.Tick(170, Grid));
+        Assert.True(gate.Tick(180, Grid));
+    }
+
+    [Fact]
+    public void AMovedOrResizedWindowTriggersReReads()
+    {
+        var gate = new FollowGate();
+        gate.Reset(100, Grid);
+        var moved = new PixelRect(120, 200, 920, 700);
+        Assert.True(gate.Tick(100, moved));
+        Assert.True(gate.Tick(100, moved));
+        Assert.False(gate.Tick(100, moved));
+    }
+
+    [Fact]
+    public void RetryKeepsTryingWhileExcelIsBusy()
+    {
+        var gate = new FollowGate();
+        gate.Reset(100, Grid);
+        gate.Retry();
+        Assert.True(gate.Tick(100, Grid));
+        gate.Retry();
+        Assert.True(gate.Tick(100, Grid));
+        Assert.False(gate.Tick(100, Grid));
+    }
+
+    [Fact]
     public void DegenerateInputsShowNothing()
     {
         Assert.False(CrosshairGeometry.IsVisible(CrosshairGeometry.Bands(default, new PixelRect(1, 1, 5, 5))));

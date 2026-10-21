@@ -103,6 +103,12 @@ resizing. It disappears when the window closes. A range gets all of its rows and
   isn't marked as changed and Excel's undo history is untouched. It works on any Excel version.
 - **Cost per move:** about 15 reads of cell and window positions plus one repaint, expected well under 2 ms.
   With timings on, the status line shows it: "move N ms (highlight M)".
+- **Nothing runs while you're idle.** Between moves it asks Excel for positions again only after keyboard or mouse
+  input, or after the Excel window moves or resizes. It never interrupts a recalculation: while Excel is calculating
+  (data tables can take minutes), the bands are hidden and come back when the calculation finishes. Indexing at idle
+  waits for calculations the same way.
+- **Display scaling:** the bands are drawn in Excel's own DPI mode, so they line up at any Windows scaling, on
+  every monitor, in both of Office's display modes ("Optimize for best appearance" or "for compatibility").
 - **Alternative in Microsoft 365:** Excel's own **View › Focus Cell** highlights the active cell's row and column, and
   works with the tracer because the tracer moves Excel's real selection. Turn this highlight off if you use Focus Cell.
 
@@ -211,6 +217,9 @@ the warning:
 - Legacy CSE array formulas spanning several cells are indexed per cell, which is correct only for their
   top-left cell.
 - Windows desktop Excel only (no Mac/web).
+- 32-bit Excel has about 2–4 GB for the workbook and every add-in. Reads are done in chunks that shrink automatically
+  when Excel runs short. If memory is exhausted anyway, the tracer says so instead of failing; 64-bit Excel avoids
+  this.
 
 ## License
 

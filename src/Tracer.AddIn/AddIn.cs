@@ -61,25 +61,29 @@ public sealed class AddIn : IExcelAddIn
 public static class Commands
 {
     [ExcelCommand(Name = "FT_TracePrecedents")]
-    public static void TracePrecedents() => Run(() => TraceController.Instance.TraceActive(TraceMode.Precedents));
+    public static void TracePrecedents() => Run("tracing precedents", () => TraceController.Instance.TraceActive(TraceMode.Precedents));
 
     [ExcelCommand(Name = "FT_TraceDependents")]
-    public static void TraceDependents() => Run(() => TraceController.Instance.TraceActive(TraceMode.Dependents));
+    public static void TraceDependents() => Run("tracing dependents", () => TraceController.Instance.TraceActive(TraceMode.Dependents));
 
     [ExcelCommand(Name = "FT_TraceError")]
-    public static void TraceError() => Run(() => TraceController.Instance.TraceActive(TraceMode.Errors));
+    public static void TraceError() => Run("tracing the error", () => TraceController.Instance.TraceActive(TraceMode.Errors));
 
     /// <summary>Target of Excel's Ctrl+Z after an edit made in the trace window (registered with OnUndo).</summary>
     [ExcelCommand(Name = "FT_UndoEdit")]
-    public static void UndoEdit() => Run(() => TraceController.Instance.UndoFromExcel());
+    public static void UndoEdit() => Run("undoing the edit", () => TraceController.Instance.UndoFromExcel());
 
     [ExcelCommand(Name = "FT_JumpBack")]
-    public static void JumpBack() => Run(() => TraceController.Instance.JumpBack());
+    public static void JumpBack() => Run("jumping back", () => TraceController.Instance.JumpBack());
 
     [ExcelCommand(Name = "FT_RebuildIndex")]
-    public static void RebuildIndex() => Run(() => TraceController.Instance.RebuildIndex());
+    public static void RebuildIndex() => Run("rebuilding the index", () => TraceController.Instance.RebuildIndex());
 
-    internal static void Run(Action action)
+    internal const string OutOfMemoryText =
+        "Excel ran out of memory while Formula Tracer was reading the workbook. Close other workbooks and try again; 64-bit Excel avoids this.";
+
+    /// <param name="what">What was being done, for the message (e.g. "tracing dependents").</param>
+    internal static void Run(string what, Action action)
     {
         try
         {
@@ -87,7 +91,8 @@ public static class Commands
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Formula Tracer hit an error:\n\n" + ex.Message, "Formula Tracer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            string message = ChunkedReads.IsOutOfMemory(ex) ? OutOfMemoryText : ex.Message;
+            MessageBox.Show($"Formula Tracer hit an error while {what}:\n\n{message}", "Formula Tracer", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 }

@@ -648,6 +648,10 @@ internal sealed class TraceWindow : Form
         {
             action();
         }
+        catch (Exception ex) when (ChunkedReads.IsOutOfMemory(ex))
+        {
+            SetStatus(Commands.OutOfMemoryText);
+        }
         catch (COMException ex)
         {
             SetStatus("Excel is busy (finish editing the cell, then try again): " + ex.Message);

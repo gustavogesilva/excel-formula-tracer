@@ -57,7 +57,7 @@ public sealed class Ribbon : ExcelRibbon
         return ShortcutMap.Label(action) + (keys.Length > 0 ? $" ({keys})" : " (no shortcut: set one in Shortcuts…)");
     }
 
-    public void OnShortcuts(IRibbonControl control) => Commands.Run(() =>
+    public void OnShortcuts(IRibbonControl control) => Commands.Run("changing shortcuts", () =>
     {
         using var form = new ShortcutsForm(Settings.Current.Shortcuts);
         if (form.ShowDialog(new NativeOwnerWindow(ExcelDnaUtil.WindowHandle)) != DialogResult.OK) return;

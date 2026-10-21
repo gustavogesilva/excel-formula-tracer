@@ -104,8 +104,11 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
 - [ ] Clicks pass through the bands to Excel, and the bands never take focus from the trace window.
 - [ ] **(assumption: Pane.PointsToScreenPixelsX/Y are exact)** The bands line up with the cell edges at zoom 50%,
       100% and 200%. Note any offset in pixels.
-- [ ] **(assumption: the grid window is XLDESK › EXCEL7 and the strips are the system scroll-bar size)** The bands
-      stop at the vertical scroll bar and the sheet-tab strip; they never spill outside the Excel window.
+- [ ] **(assumption: drawing in Excel's DPI context aligns the bands)** Repeat the alignment check at Windows display
+      scaling 100%, 125% and 150%, and on a second monitor with a different scaling (drag Excel across). Then set
+      File › Options › General › "Optimize for compatibility", restart Excel, and check again.
+- [ ] **(assumption: the grid window is XLDESK › EXCEL7 and the strips are the scroll-bar size at the window's DPI)**
+      The bands stop at the vertical scroll bar and the sheet-tab strip; they never spill outside the Excel window.
 - [ ] Frozen panes (rows and columns): the bands cross the frozen area too, aligned. Same with a split window.
 - [ ] Scroll with the mouse wheel, resize Excel, or change zoom while the window is open: the bands follow within
       a fraction of a second. Scrolling the cell off screen hides its band(s).
@@ -115,6 +118,27 @@ Items marked **(assumption)** are behaviours the code relies on that were not ve
 - [ ] Minimize Excel and restore it: no stray bands while minimized.
 - [ ] Esc, Enter and closing the window remove the bands. Unticking the checkbox removes them immediately.
 - [ ] A range target (dependents of a selection, a range row) shades all its rows and columns.
+
+## Data tables and calculation
+
+Use a workbook with a slow data table (Data › What-If Analysis › Data Table over a model that takes several seconds),
+calculation mode Automatic.
+- [ ] **(assumption: the highlight's polling caused the endless recalculation)** With the trace window open and the
+      highlight on, change an input and keep your hands off the mouse and keyboard. "Calculating x%" in the status bar
+      finishes, and the bands come back afterwards.
+- [ ] **(assumption: CalculationState reports xlCalculating during a data-table recalculation)** While it is still
+      calculating, the bands are hidden rather than misplaced.
+- [ ] With the trace window closed, open the workbook (indexing at idle runs): the recalculation finishes, and
+      indexing continues afterwards (Ctrl+Shift+Q is instant).
+- [ ] If Excel still recalculates endlessly, note what was open and what you did last.
+
+## Memory (large models, ideally 32-bit Excel)
+
+- [ ] E on a cell showing `#N/A` from a `VLOOKUP` over full columns of a big data sheet: the roots are listed, with
+      no "out of memory" dialog.
+- [ ] → on a precedent like `Data!A:Z`: it lists the first 10,000 non-empty cells without delay or error.
+- [ ] Ctrl+Shift+Q right after opening a large model (index at idle off): no dialog.
+- [ ] If a dialog appears, it now names the command ("…while tracing dependents"): note it.
 
 ## Precedents coverage
 

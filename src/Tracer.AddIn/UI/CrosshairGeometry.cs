@@ -75,6 +75,46 @@ internal static class CrosshairGeometry
 }
 
 /// <summary>
+/// When the highlight re-reads Excel's geometry. Each timer tick checks only cheap Win32 state, the time of the last
+/// keyboard/mouse input and the Excel window's rectangle, and re-reads (through Excel's object model) only after one
+/// of them changed: a couple of times, so scrolling settles, then not again until the next change. An idle user
+/// means no calls into Excel at all, so a long recalculation (data tables recalculate asynchronously) is never
+/// interrupted by the highlight. Pure, unit-tested.
+/// </summary>
+internal sealed class FollowGate
+{
+    private const int SettleTicks = 2;
+    private uint _lastInput;
+    private PixelRect _window;
+    private int _pending;
+
+    /// <summary>Starts over from the state right after a re-read.</summary>
+    public void Reset(uint lastInput, PixelRect window)
+    {
+        _lastInput = lastInput;
+        _window = window;
+        _pending = 0;
+    }
+
+    /// <summary>True when this tick should re-read the geometry.</summary>
+    public bool Tick(uint lastInput, PixelRect window)
+    {
+        if (lastInput != _lastInput || !window.Equals(_window))
+        {
+            _lastInput = lastInput;
+            _window = window;
+            _pending = SettleTicks;
+        }
+        if (_pending == 0) return false;
+        _pending--;
+        return true;
+    }
+
+    /// <summary>The re-read couldn't happen (Excel busy or calculating): try again on the next tick.</summary>
+    public void Retry() => _pending = Math.Max(_pending, 1);
+}
+
+/// <summary>
 /// Where a traced range is drawn: the Excel window showing it, that window's grid area (cells only, no headings
 /// or scroll bars), and per pane its visible cells and the range, all in screen pixels.
 /// </summary>
